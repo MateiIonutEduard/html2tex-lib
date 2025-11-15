@@ -136,3 +136,111 @@ static char* parse_text_content(ParserState* state) {
 
     return text[0] ? text : NULL;
 }
+
+static HTMLNode* parse_element(ParserState* state);
+
+static HTMLNode* parse_node(ParserState* state) {
+    skip_whitespace(state);
+
+    if (state->position >= state->length) 
+        return NULL;
+
+    if (state->input[state->position] == '<')
+        return parse_element(state);
+    else {
+        HTMLNode* node = malloc(sizeof(HTMLNode));
+        node->tag = NULL;
+
+        node->content = parse_text_content(state);
+        node->attributes = NULL;
+
+        node->children = NULL;
+        node->next = NULL;
+
+        node->parent = NULL;
+        return node->content ? node 
+            : (free(node), NULL);
+    }
+}
+
+static HTMLNode* parse_element(ParserState* state) {
+    if (state->input[state->position] != '<') return NULL;
+    state->position++;
+
+    /* check for closing tag */
+    if (state->input[state->position] == '/') {
+        state->position++;
+        char* tag_name = parse_tag_name(state);
+        skip_whitespace(state);
+
+        if (state->position < state->length && state->input[state->position] == '>')
+            state->position++;
+
+        /* closing tags don't create nodes */
+        free(tag_name);
+        return NULL;
+    }
+
+    /* parse opening tag */
+    char* tag_name = parse_tag_name(state);
+
+    if (!tag_name) return NULL;
+    HTMLAttribute* attributes = parse_attributes(state);
+
+    /* check for self-closing tag */
+    int self_closing = 0;
+    if (state->position < state->length && state->input[state->position] == '/') {
+        self_closing = 1;
+        state->position++;
+    }
+
+    if (state->position < state->length && state->input[state->position] == '>')
+        state->position++;
+
+    HTMLNode* node = malloc(sizeof(HTMLNode));
+    node->tag = tag_name;
+
+    node->content = NULL;
+    node->attributes = attributes;
+
+    node->children = NULL;
+    node->next = NULL;
+    node->parent = NULL;
+
+    /* parse children if not self-closing */
+    if (!self_closing) {
+        HTMLNode** current_child = &node->children;
+
+        while (state->position < state->length) {
+            skip_whitespace(state);
+
+            if (state->position < state->length + 2 &&
+                state->input[state->position] == '<' &&
+                state->input[state->position + 1] == '/') {
+                /* found closing tag */
+                state->position += 2;
+
+                char* closing_tag = parse_tag_name(state);
+                skip_whitespace(state);
+
+                if (state->position < state->length && state->input[state->position] == '>')
+                    state->position++;
+
+                free(closing_tag);
+                break;
+            }
+
+            HTMLNode* child = parse_node(state);
+
+            if (child) {
+                child->parent = node;
+                *current_child = child;
+                current_child = &child->next;
+            }
+            else
+                break;
+        }
+    }
+
+    return node;
+}

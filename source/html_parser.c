@@ -279,3 +279,31 @@ HTMLNode* html2tex_parse(const char* html) {
 
     return root;
 }
+
+void html2tex_free_node(HTMLNode* node) {
+    if (!node) return;
+    HTMLNode* current = node;
+
+    while (current) {
+        HTMLNode* next = current->next;
+        if (current->tag) free(current->tag);
+
+        if (current->content) free(current->content);
+        HTMLAttribute* attr = current->attributes;
+
+        while (attr) {
+            HTMLAttribute* next_attr = attr->next;
+            free(attr->key);
+
+            if (attr->value) 
+                free(attr->value);
+
+            free(attr);
+            attr = next_attr;
+        }
+
+        html2tex_free_node(current->children);
+        free(current);
+        current = next;
+    }
+}

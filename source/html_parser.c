@@ -244,3 +244,38 @@ static HTMLNode* parse_element(ParserState* state) {
 
     return node;
 }
+
+HTMLNode* html2tex_parse(const char* html) {
+    if (!html) return NULL;
+    ParserState state;
+
+    state.input = html;
+    state.position = 0;
+
+    state.length = strlen(html);
+    HTMLNode* root = malloc(sizeof(HTMLNode));
+
+    root->tag = NULL;
+    root->content = NULL;
+
+    root->attributes = NULL;
+    root->children = NULL;
+
+    root->next = NULL;
+    root->parent = NULL;
+
+    HTMLNode** current = &root->children;
+
+    while (state.position < state.length) {
+        HTMLNode* node = parse_node(&state);
+
+        if (node) {
+            *current = node;
+            current = &node->next;
+        }
+        else
+            break;
+    }
+
+    return root;
+}

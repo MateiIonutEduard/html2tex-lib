@@ -39,3 +39,31 @@ static char* parse_tag_name(ParserState* state) {
 
     return name;
 }
+
+static char* parse_quoted_string(ParserState* state) {
+    if (state->position >= state->length) 
+        return NULL;
+
+    char quote = state->input[state->position];
+    if (quote != '"' && quote != '\'') return NULL;
+
+    /* skip opening quote */
+    state->position++;
+
+    size_t start = state->position;
+    while (state->position < state->length &&
+        state->input[state->position] != quote)
+        state->position++;
+
+    if (state->position >= state->length) return NULL;
+    size_t length = state->position - start;
+
+    char* str = malloc(length + 1);
+    strncpy(str, state->input + start, length);
+
+    /* skip closing quote */
+    str[length] = '\0';
+    state->position++;
+
+    return str;
+}

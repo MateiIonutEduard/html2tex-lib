@@ -13,7 +13,7 @@ public:
     ~HtmlToLatexConverter();
 
     /* convert HTML string to LaTeX */
-    string convert(const std::string& html);
+    string convert(string& html);
 
     /* check for errors */
     bool hasError() const;
@@ -26,7 +26,7 @@ public:
 
 private:
     class Impl;
-    std::unique_ptr<Impl> pImpl;
+    unique_ptr<Impl> pImpl;
 };
 
 #endif

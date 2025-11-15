@@ -15,11 +15,11 @@ public:
     LaTeXConverter* converter;
 };
 
-HtmlToLatexConverter::HtmlToLatexConverter() : pImpl(std::make_unique<Impl>()) { }
+HtmlToLatexConverter::HtmlToLatexConverter() : pImpl(make_unique<Impl>()) { }
 
 HtmlToLatexConverter::~HtmlToLatexConverter() = default;
 
-string HtmlToLatexConverter::convert(const std::string& html) {
+string HtmlToLatexConverter::convert(string& html) {
     if (!pImpl->converter) 
         return "";
 

@@ -1,0 +1,34 @@
+@PACKAGE_INIT@
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/html2texTargets.cmake")
+
+# Set version variables
+set(HTML2TEX_VERSION @PROJECT_VERSION@)
+
+# Check required components
+check_required_components(html2tex)
+
+# Create imported target aliases
+if(NOT TARGET html2tex::html2tex)
+    add_library(html2tex::html2tex INTERFACE IMPORTED)
+    set_target_properties(html2tex::html2tex PROPERTIES
+        INTERFACE_LINK_LIBRARIES html2tex
+    )
+endif()
+
+# Set package variables for find_package
+set(HTML2TEX_FOUND TRUE)
+set(HTML2TEX_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
+set(HTML2TEX_LIBRARIES html2tex::html2tex)
+
+# Provide C++ wrapper source location
+set(HTML2TEX_CPP_WRAPPER_HEADER "@PACKAGE_INCLUDE_INSTALL_DIR@/HtmlToLatexConverter.h")
+set(HTML2TEX_CPP_WRAPPER_SOURCE "@PACKAGE_SOURCE_INSTALL_DIR@/HtmlToLatexConverter.cpp")
+
+# Print configuration info (optional)
+if(HTML2TEX_VERBOSE)
+    message(STATUS "Found html2tex ${HTML2TEX_VERSION}")
+    message(STATUS "  Include directories: ${HTML2TEX_INCLUDE_DIRS}")
+    message(STATUS "  Libraries: ${HTML2TEX_LIBRARIES}")
+endif()

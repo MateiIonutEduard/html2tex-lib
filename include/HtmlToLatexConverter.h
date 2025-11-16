@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <string>
-
+#include "html2tex.h"
 #include <iostream>
 using namespace std;
 
@@ -13,7 +13,7 @@ public:
     ~HtmlToLatexConverter();
 
     /* convert HTML string to LaTeX */
-    string convert(string& html);
+    string convert(const string& html);
 
     /* check for errors */
     bool hasError() const;

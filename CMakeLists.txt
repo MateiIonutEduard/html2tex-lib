@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(html2tex-lib
+project(html2tex
     VERSION 1.0.0
     LANGUAGES C
     DESCRIPTION "HTML to LaTeX Converter - C Static Library"
@@ -40,7 +40,7 @@ else()
 endif()
 
 # Print configuration
-message(STATUS "Building html2tex-lib ${PROJECT_VERSION}")
+message(STATUS "Building html2tex ${PROJECT_VERSION}")
 message(STATUS "System: ${CMAKE_SYSTEM_NAME}")
 message(STATUS "Architecture: ${ARCH_NAME}")
 message(STATUS "C Compiler: ${C_COMPILER}")
@@ -102,51 +102,99 @@ target_include_directories(html2tex
 # Create an alias for easier linking
 add_library(html2tex::html2tex ALIAS html2tex)
 
+# Set installation paths
+set(INCLUDE_INSTALL_DIR include)
+set(SOURCE_INSTALL_DIR source)
+set(CMAKE_INSTALL_LIBDIR lib)
+
 # Installation
 install(TARGETS html2tex
     EXPORT html2texTargets
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION bin
-    INCLUDES DESTINATION include
+    INCLUDES DESTINATION ${INCLUDE_INSTALL_DIR}
 )
 
 # Install headers
 install(FILES
     include/html2tex.h
     include/HtmlToLatexConverter.h
-    DESTINATION include
+    DESTINATION ${INCLUDE_INSTALL_DIR}
 )
 
 # Install C++ wrapper source for external applications
 install(FILES
     source/HtmlToLatexConverter.cpp
-    DESTINATION source
+    DESTINATION ${SOURCE_INSTALL_DIR}
 )
 
 # Export targets
 install(EXPORT html2texTargets
-    FILE html2texConfig.cmake
+    FILE html2texTargets.cmake
     NAMESPACE html2tex::
-    DESTINATION lib/cmake/html2tex
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/html2tex
 )
 
 # Create package configuration
 include(CMakePackageConfigHelpers)
+
+# Create the config file
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/html2texConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/html2texConfig.cmake
-    INSTALL_DESTINATION lib/cmake/html2tex
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/html2tex
+    PATH_VARS 
+        INCLUDE_INSTALL_DIR
+        SOURCE_INSTALL_DIR
 )
+
+# Install the config file
+install(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/html2texConfig.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/html2tex
+)
+
+# Export targets for build tree (optional, for development)
+export(EXPORT html2texTargets
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/html2texTargets.cmake
+    NAMESPACE html2tex::
+)
+
+# Create a version file
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/html2texConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# Install the version file
+install(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/html2texConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/html2tex
+)
+
+# Include CPack for package generation
+include(CPack)
 
 # Print final output information
 message(STATUS "")
 message(STATUS "Build configuration complete:")
 message(STATUS "  C static library: ${OUTPUT_DIR}/${LIBRARY_PREFIX}html2tex${LIBRARY_SUFFIX}")
-message(STATUS "  C headers: include/html2tex.h")
-message(STATUS "  C++ wrapper: include/HtmlToLatexConverter.h + source/HtmlToLatexConverter.cpp")
+message(STATUS "  C headers: ${INCLUDE_INSTALL_DIR}/html2tex.h")
+message(STATUS "  C++ wrapper: ${INCLUDE_INSTALL_DIR}/HtmlToLatexConverter.h + ${SOURCE_INSTALL_DIR}/HtmlToLatexConverter.cpp")
+message(STATUS "")
+message(STATUS "Installation paths:")
+message(STATUS "  Headers: ${CMAKE_INSTALL_PREFIX}/${INCLUDE_INSTALL_DIR}")
+message(STATUS "  Library: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}")
+message(STATUS "  Sources: ${CMAKE_INSTALL_PREFIX}/${SOURCE_INSTALL_DIR}")
+message(STATUS "  CMake config: ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/cmake/html2tex")
 message(STATUS "")
 message(STATUS "For external applications:")
 message(STATUS "  1. Link against: ${LIBRARY_PREFIX}html2tex${LIBRARY_SUFFIX}")
 message(STATUS "  2. Include: html2tex.h (C) or HtmlToLatexConverter.h (C++)")
 message(STATUS "  3. Add HtmlToLatexConverter.cpp to your C++ project")
+message(STATUS "")
+message(STATUS "Build commands:")
+message(STATUS "  cmake --build . --config Release")
+message(STATUS "  cmake --install . --prefix /path/to/install")

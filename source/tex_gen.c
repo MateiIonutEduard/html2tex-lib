@@ -22,7 +22,7 @@ static void ensure_capacity(LaTeXConverter* converter, size_t needed) {
     }
 }
 
-static void append_string(LaTeXConverter* converter, const char* str) {
+void append_string(LaTeXConverter* converter, const char* str) {
     size_t len = strlen(str);
     ensure_capacity(converter, len + 1);
 
@@ -74,7 +74,7 @@ static void escape_latex(LaTeXConverter* converter, const char* text) {
 
 static void convert_node(LaTeXConverter* converter, HTMLNode* node);
 
-static void convert_children(LaTeXConverter* converter, HTMLNode* node) {
+void convert_children(LaTeXConverter* converter, HTMLNode* node) {
     HTMLNode* child = node->children;
 
     while (child) {

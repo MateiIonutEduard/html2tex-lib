@@ -19,7 +19,7 @@ HtmlToLatexConverter::HtmlToLatexConverter() : pImpl(make_unique<Impl>()) { }
 
 HtmlToLatexConverter::~HtmlToLatexConverter() = default;
 
-string HtmlToLatexConverter::convert(string& html) {
+string HtmlToLatexConverter::convert(const string& html) {
     if (!pImpl->converter) 
         return "";
 

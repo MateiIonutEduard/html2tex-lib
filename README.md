@@ -1,4 +1,4 @@
-# html2tex-lib
+# html2tex
 
 **Lightning-fast HTML to LaTeX conversion in C/C++**  
 Zero-dependency static library for robust document conversion across all platforms.
@@ -11,7 +11,7 @@ Zero-dependency static library for robust document conversion across all platfor
 
 ```bash
 # Clone & build
-git clone https://github.com/MateiIonutEduard/html2tex-lib.git && cd html2tex-lib
+git clone https://github.com/MateiIonutEduard/html2tex.git && cd html2tex
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release --parallel
@@ -59,7 +59,7 @@ Copy these files to your project:
 * `source/HtmlToLatexConverter.cpp`
 * Built static library from `bin/Release/`
 
-### CMakeLists.txt:
+#### CMakeLists.txt:
 
 ```cmake
 # Add C++ wrapper source
@@ -88,7 +88,7 @@ target_link_libraries(your_target PUBLIC html2tex::html2tex)
 ### Method 3: Subdirectory
 
 ```cmake
-add_subdirectory(third_party/html2tex-lib)
+add_subdirectory(third_party/html2tex)
 target_link_libraries(your_target PUBLIC html2tex)
 target_include_directories(your_target PUBLIC 
     third_party/html2tex-lib/include
@@ -116,7 +116,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug
 cmake --install . --prefix /usr/local
 ```
 
-## 🎯 Why html2tex-lib?
+## 🎯 Why html2tex?
 * 🔄 Zero Dependencies - Pure C/C++, no external libs
 * ⚡ High Performance - Optimized parsing and conversion
 * 🎯 Cross-Platform - Consistent behavior everywhere

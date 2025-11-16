@@ -44,6 +44,7 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
     append_string(converter, "\\usepackage{hyperref}\n");
 
     append_string(converter, "\\usepackage{ulem}\n");
+    append_string(converter, "\\usepackage[table]{xcolor}\n");
     append_string(converter, "\\begin{document}\n\n");
 
     /* parse HTML and convert */

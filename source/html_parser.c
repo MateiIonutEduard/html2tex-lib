@@ -41,7 +41,7 @@ static char* parse_tag_name(ParserState* state) {
 }
 
 static char* parse_quoted_string(ParserState* state) {
-    if (state->position >= state->length) 
+    if (state->position >= state->length)
         return NULL;
 
     char quote = state->input[state->position];
@@ -117,32 +117,19 @@ static char* parse_text_content(ParserState* state) {
     }
 
     if (length == 0) return NULL;
-    char* text = malloc(length + 1);
 
+    char* text = malloc(length + 1);
     strncpy(text, state->input + start, length);
     text[length] = '\0';
 
-    /* trim whitespace */
-    while (length > 0 && isspace(text[length - 1]))
-        text[--length] = '\0';
-
-    size_t start_trim = 0;
-
-    while (start_trim < length && isspace(text[start_trim]))
-        start_trim++;
-
-    if (start_trim > 0)
-        memmove(text, text + start_trim, length - start_trim + 1);
-
-    return text[0] ? text : NULL;
+    return text;
 }
 
 static HTMLNode* parse_element(ParserState* state);
 
 static HTMLNode* parse_node(ParserState* state) {
-    skip_whitespace(state);
-
-    if (state->position >= state->length) 
+    /* don't skip whitespace at the beginning - it might be significant */
+    if (state->position >= state->length)
         return NULL;
 
     if (state->input[state->position] == '<')
@@ -158,8 +145,10 @@ static HTMLNode* parse_node(ParserState* state) {
         node->next = NULL;
 
         node->parent = NULL;
-        return node->content ? node 
-            : (free(node), NULL);
+
+        /* always return the node, even if content is only whitespace */
+        /* this is crucial for preserving spaces between elements */
+        return node;
     }
 }
 
@@ -189,6 +178,7 @@ static HTMLNode* parse_element(ParserState* state) {
 
     /* check for self-closing tag */
     int self_closing = 0;
+
     if (state->position < state->length && state->input[state->position] == '/') {
         self_closing = 1;
         state->position++;
@@ -212,22 +202,35 @@ static HTMLNode* parse_element(ParserState* state) {
         HTMLNode** current_child = &node->children;
 
         while (state->position < state->length) {
-            skip_whitespace(state);
+            /* don't skip whitespace between children - it might be significant text */
 
-            if (state->position < state->length + 2 &&
+            /* check for closing tag */
+            if (state->position < state->length - 1 &&
                 state->input[state->position] == '<' &&
                 state->input[state->position + 1] == '/') {
-                /* found closing tag */
-                state->position += 2;
-
-                char* closing_tag = parse_tag_name(state);
+                /* found closing tag - skip whitespace before checking */
+                size_t saved_pos = state->position;
                 skip_whitespace(state);
 
-                if (state->position < state->length && state->input[state->position] == '>')
-                    state->position++;
+                /* if we still have the closing tag after skipping whitespace */
+                if (state->position < state->length - 1 &&
+                    state->input[state->position] == '<' &&
+                    state->input[state->position + 1] == '/') {
+                    state->position += 2;
 
-                free(closing_tag);
-                break;
+                    char* closing_tag = parse_tag_name(state);
+                    skip_whitespace(state);
+
+                    if (state->position < state->length && state->input[state->position] == '>')
+                        state->position++;
+
+                    free(closing_tag);
+                    break;
+                }
+                else {
+                    /* the whitespace was actually text content, restore position and parse as text */
+                    state->position = saved_pos;
+                }
             }
 
             HTMLNode* child = parse_node(state);
@@ -237,8 +240,10 @@ static HTMLNode* parse_element(ParserState* state) {
                 *current_child = child;
                 current_child = &child->next;
             }
-            else
+            else {
+                /* if no child was parsed, we might be at the end or have malformed HTML */
                 break;
+            }
         }
     }
 
@@ -273,8 +278,13 @@ HTMLNode* html2tex_parse(const char* html) {
             *current = node;
             current = &node->next;
         }
-        else
-            break;
+        else {
+            /* skip one character if parsing fails to avoid infinite loop */
+            if (state.position < state.length)
+                state.position++;
+            else
+                break;
+        }
     }
 
     return root;
@@ -295,7 +305,7 @@ void html2tex_free_node(HTMLNode* node) {
             HTMLAttribute* next_attr = attr->next;
             free(attr->key);
 
-            if (attr->value) 
+            if (attr->value)
                 free(attr->value);
 
             free(attr);

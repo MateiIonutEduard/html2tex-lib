@@ -55,6 +55,9 @@ extern "C" {
     char* html2tex_convert(LaTeXConverter* converter, const char* html);
     int html2tex_get_error(const LaTeXConverter* converter);
     const char* html2tex_get_error_message(const LaTeXConverter* converter);
+	
+	void append_string(LaTeXConverter* converter, const char* str);
+	void convert_children(LaTeXConverter* converter, HTMLNode* node);
 
     /* Utility functions */
     HTMLNode* html2tex_parse(const char* html);

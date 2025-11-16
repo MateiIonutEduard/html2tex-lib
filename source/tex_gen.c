@@ -95,7 +95,93 @@ static void end_environment(LaTeXConverter* converter, const char* env) {
     append_string(converter, "}\n");
 }
 
-static void convert_node(LaTeXConverter* converter, HTMLNode* node) {
+static char* extract_color_from_style(const char* style, const char* property) {
+    if (!style || !property) return NULL;
+
+    char* style_copy = strdup(style);
+    char* token = strtok(style_copy, ";");
+
+    while (token) {
+        while (*token == ' ') token++;
+        char* colon = strchr(token, ':');
+
+        if (colon) {
+            *colon = '\0';
+            char* prop = token;
+
+            char* value = colon + 1;
+            while (*value == ' ') value++;
+
+            if (strcmp(prop, property) == 0) {
+                char* result = strdup(value);
+                free(style_copy);
+                return result;
+            }
+        }
+
+        token = strtok(NULL, ";");
+    }
+
+    free(style_copy);
+    return NULL;
+}
+
+static char* color_to_hex(const char* color_value) {
+    if (!color_value) return NULL;
+    char* result = NULL;
+
+    if (color_value[0] == '#')
+        result = strdup(color_value + 1);
+    else if (strncmp(color_value, "rgb(", 4) == 0) {
+        int r, g, b;
+
+        if (sscanf(color_value, "rgb(%d, %d, %d)", &r, &g, &b) == 3) {
+            result = malloc(7);
+            snprintf(result, 7, "%02X%02X%02X", r, g, b);
+        }
+    }
+    else if (strncmp(color_value, "rgba(", 5) == 0) {
+        int r, g, b;
+        float a;
+
+        if (sscanf(color_value, "rgba(%d, %d, %d, %f)", &r, &g, &b, &a) == 4) {
+            result = malloc(7);
+            snprintf(result, 7, "%02X%02X%02X", r, g, b);
+        }
+    }
+    else
+        result = strdup(color_value);
+
+    if (result) {
+        for (char* p = result; *p; p++)
+            *p = toupper(*p);
+    }
+
+    return result;
+}
+
+/* handle color application with proper nesting */
+static void apply_color(LaTeXConverter* converter, const char* color_value, int is_background) {
+    if (!color_value) return;
+
+    char* hex_color = color_to_hex(color_value);
+    if (!hex_color) return;
+
+    if (is_background) {
+        append_string(converter, "\\colorbox[HTML]{");
+        append_string(converter, hex_color);
+        append_string(converter, "}{");
+    }
+    else {
+        append_string(converter, "\\textcolor[HTML]{");
+        append_string(converter, hex_color);
+        append_string(converter, "}{");
+    }
+
+    free(hex_color);
+}
+
+void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return;
 
     /* handle text nodes */
@@ -104,8 +190,7 @@ static void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         return;
     }
 
-    if (!node->tag) 
-        return;
+    if (!node->tag) return;
 
     /* handle different HTML tags */
     if (strcmp(node->tag, "p") == 0) {
@@ -148,9 +233,94 @@ static void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         convert_children(converter, node);
         append_string(converter, "}");
     }
+    else if (strcmp(node->tag, "font") == 0) {
+        /* parse color attribute and style background-color */
+        char* color_attr = get_attribute(node->attributes, "color");
+        char* style_attr = get_attribute(node->attributes, "style");
+
+        /* direct color attribute */
+        char* text_color = color_attr;
+        char* bg_color = NULL;
+
+        /* extract background color from style if present */
+        if (style_attr)
+            bg_color = extract_color_from_style(style_attr, "background-color");
+
+        int has_text_color = (text_color != NULL);
+        int has_bg_color = (bg_color != NULL);
+
+        /* apply colors with proper LaTeX nesting */
+        if (has_bg_color && has_text_color) {
+            /* both colors: background first, then text color */
+            apply_color(converter, bg_color, 1);
+            apply_color(converter, text_color, 0);
+
+            convert_children(converter, node);
+            append_string(converter, "}}");
+        }
+        else if (has_bg_color) {
+            /* only background color */
+            apply_color(converter, bg_color, 1);
+
+            convert_children(converter, node);
+            append_string(converter, "}");
+        }
+        else if (has_text_color) {
+            /* only text color */
+            apply_color(converter, text_color, 0);
+
+            convert_children(converter, node);
+            append_string(converter, "}");
+        }
+        else {
+            /* no color specified, just convert content */
+            convert_children(converter, node);
+        }
+
+        /* clean up allocated memory */
+        if (bg_color) free(bg_color);
+    }
+    else if (strcmp(node->tag, "span") == 0) {
+        /* handle span tags with inline styles */
+        char* style_attr = get_attribute(node->attributes, "style");
+
+        if (style_attr) {
+            char* text_color = extract_color_from_style(style_attr, "color");
+            char* bg_color = extract_color_from_style(style_attr, "background-color");
+
+            int has_text_color = (text_color != NULL);
+            int has_bg_color = (bg_color != NULL);
+
+            /* apply colors */
+            if (has_bg_color && has_text_color) {
+                apply_color(converter, bg_color, 1);
+                apply_color(converter, text_color, 0);
+
+                convert_children(converter, node);
+                append_string(converter, "}}");
+            }
+            else if (has_bg_color) {
+                apply_color(converter, bg_color, 1);
+                convert_children(converter, node);
+                append_string(converter, "}");
+            }
+            else if (has_text_color) {
+                apply_color(converter, text_color, 0);
+                convert_children(converter, node);
+                append_string(converter, "}");
+            }
+            else
+                convert_children(converter, node);
+
+            /* clean up */
+            if (text_color) free(text_color);
+            if (bg_color) free(bg_color);
+        }
+        else
+            convert_children(converter, node);
+    }
     else if (strcmp(node->tag, "a") == 0) {
-        char* href = get_attribute(node->attributes,
-            "href");
+        char* href = get_attribute(node->attributes, "href");
 
         if (href) {
             append_string(converter, "\\href{");
@@ -164,18 +334,14 @@ static void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             convert_children(converter, node);
     }
     else if (strcmp(node->tag, "ul") == 0) {
-        begin_environment(converter, "itemize");
+        append_string(converter, "\\begin{itemize}\n");
         convert_children(converter, node);
-
-        end_environment(converter, "itemize");
-        append_string(converter, "\n");
+        append_string(converter, "\\end{itemize}\n");
     }
     else if (strcmp(node->tag, "ol") == 0) {
-        begin_environment(converter, "enumerate");
+        append_string(converter, "\\begin{enumerate}\n");
         convert_children(converter, node);
-
-        end_environment(converter, "enumerate");
-        append_string(converter, "\n");
+        append_string(converter, "\\end{enumerate}\n");
     }
     else if (strcmp(node->tag, "li") == 0) {
         append_string(converter, "\\item ");
@@ -186,7 +352,7 @@ static void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         append_string(converter, "\\\\\n");
     else if (strcmp(node->tag, "hr") == 0)
         append_string(converter, "\\hrulefill\n\n");
-    else if (strcmp(node->tag, "div") == 0 || strcmp(node->tag, "span") == 0)
+    else if (strcmp(node->tag, "div") == 0)
         convert_children(converter, node);
     else {
         /* unknown tag, just convert children */

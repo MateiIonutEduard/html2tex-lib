@@ -25,8 +25,9 @@ LaTeXConverter* html2tex_create(void) {
     converter->state.table_columns = 0;
 
     converter->state.current_column = 0;
-    converter->error_code = 0;
+    converter->state.table_caption = NULL;
 
+    converter->error_code = 0;
     converter->error_message[0] = '\0';
     return converter;
 }
@@ -46,6 +47,12 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
 
     converter->error_code = 0;
     converter->error_message[0] = '\0';
+
+    /* free any existing caption */
+    if (converter->state.table_caption) {
+        free(converter->state.table_caption);
+        converter->state.table_caption = NULL;
+    }
 
     /* add LaTeX document preamble */
     append_string(converter, "\\documentclass{article}\n");
@@ -89,6 +96,10 @@ const char* html2tex_get_error_message(const LaTeXConverter* converter) {
 
 void html2tex_destroy(LaTeXConverter* converter) {
     if (!converter) return;
+
+    /* free table caption if it exists */
+    if (converter->state.table_caption)
+        free(converter->state.table_caption);
 
     if (converter->output)
         free(converter->output);

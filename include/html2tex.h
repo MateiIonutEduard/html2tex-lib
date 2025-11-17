@@ -46,6 +46,7 @@ extern "C" {
 		
         int table_columns;
         int current_column;
+		char* table_caption;
     };
 
     /* main converter structure */

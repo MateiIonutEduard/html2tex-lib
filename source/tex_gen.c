@@ -187,6 +187,7 @@ static void begin_table(LaTeXConverter* converter, int columns) {
 
     converter->state.table_columns = columns;
     converter->state.current_column = 0;
+    converter->state.table_caption = NULL;
 
     append_string(converter, "\\begin{table}[h]\n\\centering\n");
     append_string(converter, "\\begin{tabular}{|");
@@ -200,16 +201,27 @@ static void begin_table(LaTeXConverter* converter, int columns) {
 
 static void end_table(LaTeXConverter* converter) {
     if (converter->state.in_table) {
-        /* remove the extra \hline that was being added here */
         append_string(converter, "\\end{tabular}\n");
 
-        append_string(converter, "\\caption{Table ");
-        char counter_str[16];
+        if (converter->state.table_caption) {
+            append_string(converter, "\\caption{");
+            escape_latex(converter, converter->state.table_caption);
+            append_string(converter, "}\n");
 
-        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
-        append_string(converter, counter_str);
+            /* free the caption memory */
+            free(converter->state.table_caption);
+            converter->state.table_caption = NULL;
+        }
+        else {
+            /* fallback to default caption */
+            append_string(converter, "\\caption{Table ");
+            char counter_str[16];
 
-        append_string(converter, "}\n");
+            snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
+            append_string(converter, counter_str);
+            append_string(converter, "}\n");
+        }
+
         append_string(converter, "\\end{table}\n\n");
     }
 
@@ -257,6 +269,14 @@ static int count_table_columns(HTMLNode* node) {
 
     while (child) {
         if (child->tag) {
+            if (child->tag) {
+                /* skip caption elements when counting columns */
+                if (strcmp(child->tag, "caption") == 0) {
+                    child = child->next;
+                    continue;
+                }
+            }
+
             if (strcmp(child->tag, "tr") == 0) {
                 /* this is a row - count its cells */
                 int row_columns = 0;
@@ -294,6 +314,67 @@ static int count_table_columns(HTMLNode* node) {
     }
 
     return max_columns > 0 ? max_columns : 1;
+}
+
+/* new function to extract caption text */
+static char* extract_caption_text(HTMLNode* node) {
+    if (!node) return NULL;
+    size_t buffer_size = 256;
+
+    char* buffer = malloc(buffer_size);
+    if (!buffer) return NULL;
+
+    buffer[0] = '\0';
+    size_t current_length = 0;
+
+    /* process the current node and its children, but not siblings */
+    if (!node->tag && node->content) {
+        /* this is a text node */
+        size_t content_len = strlen(node->content);
+
+        if (current_length + content_len + 1 > buffer_size) {
+            buffer_size = (current_length + content_len + 1) * 2;
+            char* new_buffer = realloc(buffer, buffer_size);
+
+            if (!new_buffer) {
+                free(buffer);
+                return NULL;
+            }
+
+            buffer = new_buffer;
+        }
+
+        strcat(buffer, node->content);
+        current_length += content_len;
+    }
+
+    /* process children recursively */
+    if (node->children) {
+        char* child_text = extract_caption_text(node->children);
+
+        if (child_text) {
+            size_t child_len = strlen(child_text);
+
+            if (current_length + child_len + 1 > buffer_size) {
+                buffer_size = (current_length + child_len + 1) * 2;
+                char* new_buffer = realloc(buffer, buffer_size);
+
+                if (!new_buffer) {
+                    free(buffer);
+                    free(child_text);
+                    return NULL;
+                }
+
+                buffer = new_buffer;
+            }
+
+            strcat(buffer, child_text);
+            current_length += child_len;
+            free(child_text);
+        }
+    }
+
+    return buffer;
 }
 
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
@@ -473,9 +554,44 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     else if (strcmp(node->tag, "table") == 0) {
         int columns = count_table_columns(node);
         begin_table(converter, columns);
-        convert_children(converter, node);
+
+        /* convert all children including caption */
+        HTMLNode* child = node->children;
+
+        while (child) {
+            convert_node(converter, child);
+            child = child->next;
+        }
+
         end_table(converter);
-}
+    }
+    else if (strcmp(node->tag, "caption") == 0) {
+        /* Handle table caption */
+        if (converter->state.in_table) {
+            /* Free any existing caption */
+            if (converter->state.table_caption) {
+                free(converter->state.table_caption);
+                converter->state.table_caption = NULL;
+            }
+
+            /* Extract caption text */
+            converter->state.table_caption = extract_caption_text(node);
+        }
+        else {
+            /* If not in table, just convert as normal text */
+            convert_children(converter, node);
+        }
+    }
+    else if (strcmp(node->tag, "thead") == 0 || strcmp(node->tag, "tbody") == 0 || strcmp(node->tag, "tfoot") == 0)
+        convert_children(converter, node);
+    else if (strcmp(node->tag, "tr") == 0) {
+            converter->state.current_column = 0;
+            begin_table_row(converter);
+            convert_children(converter, node);
+            end_table_row(converter);
+            }
+    else if (strcmp(node->tag, "thead") == 0 || strcmp(node->tag, "tbody") == 0 || strcmp(node->tag, "tfoot") == 0)
+        convert_children(converter, node);
     else if (strcmp(node->tag, "tr") == 0) {
         converter->state.current_column = 0;
         begin_table_row(converter);

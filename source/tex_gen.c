@@ -200,21 +200,15 @@ static void begin_table(LaTeXConverter* converter, int columns) {
 
 static void end_table(LaTeXConverter* converter) {
     if (converter->state.in_table) {
-        // make sure the last row ends properly
-        if (converter->state.in_table_row)
-            append_string(converter, " \\\\ \\hline\n");
-        else {
-            /* if we're not in a row but the table has content, ensure proper ending */
-            append_string(converter, "\\hline\n");
-        }
-
+        /* remove the extra \hline that was being added here */
         append_string(converter, "\\end{tabular}\n");
+
         append_string(converter, "\\caption{Table ");
-
         char counter_str[16];
-        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
 
+        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
         append_string(converter, counter_str);
+
         append_string(converter, "}\n");
         append_string(converter, "\\end{table}\n\n");
     }
@@ -255,41 +249,48 @@ static void end_table_cell(LaTeXConverter* converter, int is_header) {
 }
 
 static int count_table_columns(HTMLNode* node) {
-    if (!node || !node->children) return 1;
+    if (!node) return 1;
     int max_columns = 0;
-    HTMLNode* row = node->children;
 
-    /* find the first row to start with */
-    while (row && (!row->tag || strcmp(row->tag, "tr") != 0))
-        row = row->next;
+    /* look through all direct children to find rows */
+    HTMLNode* child = node->children;
 
-    /* count columns in all rows and find the maximum */
-    while (row) {
-        if (row->tag && strcmp(row->tag, "tr") == 0) {
-            int columns = 0;
-            HTMLNode* cell = row->children;
+    while (child) {
+        if (child->tag) {
+            if (strcmp(child->tag, "tr") == 0) {
+                /* this is a row - count its cells */
+                int row_columns = 0;
+                HTMLNode* cell = child->children;
 
-            while (cell) {
-                if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
-                    columns++;
+                while (cell) {
+                    if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
+                        char* colspan_attr = get_attribute(cell->attributes, "colspan");
+                        int colspan = 1;
 
-                    /* check for colspan attribute */
-                    char* colspan_attr = get_attribute(cell->attributes, "colspan");
+                        if (colspan_attr) {
+                            colspan = atoi(colspan_attr);
+                            if (colspan < 1) colspan = 1;
+                        }
 
-                    if (colspan_attr) {
-                        int colspan = atoi(colspan_attr);
-                        if (colspan > 1) columns += (colspan - 1);
+                        row_columns += colspan;
                     }
+
+                    cell = cell->next;
                 }
 
-                cell = cell->next;
+                if (row_columns > max_columns)
+                    max_columns = row_columns;
             }
+            else if (strcmp(child->tag, "thead") == 0 || strcmp(child->tag, "tbody") == 0 || strcmp(child->tag, "tfoot") == 0) {
+                /* recursively count columns in table sections */
+                int section_columns = count_table_columns(child);
 
-            if (columns > max_columns)
-                max_columns = columns;
+                if (section_columns > max_columns)
+                    max_columns = section_columns;
+            }
         }
 
-        row = row->next;
+        child = child->next;
     }
 
     return max_columns > 0 ? max_columns : 1;

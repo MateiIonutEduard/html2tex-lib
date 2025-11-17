@@ -53,10 +53,13 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
 
     append_string(converter, "\\usepackage{ulem}\n");
     append_string(converter, "\\usepackage[table]{xcolor}\n");
+
+	append_string(converter, "\\usepackage{tabularx}\n");
     append_string(converter, "\\begin{document}\n\n");
 
     /* parse HTML and convert */
     HTMLNode* root = html2tex_parse(html);
+
     if (root) {
         convert_children(converter, root);
         html2tex_free_node(root);

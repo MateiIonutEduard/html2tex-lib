@@ -181,30 +181,45 @@ static void apply_color(LaTeXConverter* converter, const char* color_value, int 
     free(hex_color);
 }
 
-static void begin_table(LaTeXConverter* converter) {
+static void begin_table(LaTeXConverter* converter, int columns) {
     converter->state.table_counter++;
     converter->state.in_table = 1;
 
-    converter->state.table_columns = 0;
+    converter->state.table_columns = columns;
     converter->state.current_column = 0;
 
-    append_string(converter, "\\begin{table}[htbp]\n\\centering\n");
-    append_string(converter, "\\begin{tabular}");
+    append_string(converter, "\\begin{table}[h]\n\\centering\n");
+    append_string(converter, "\\begin{tabular}{|");
+
+    /* add vertical lines between columns */
+    for (int i = 0; i < columns; i++)
+        append_string(converter, "c|");
+
+    append_string(converter, "}\n\\hline\n");
 }
 
 static void end_table(LaTeXConverter* converter) {
-    append_string(converter, "\\end{tabular}\n");
-    append_string(converter, "\\caption{Table ");
+    if (converter->state.in_table) {
+        // make sure the last row ends properly
+        if (converter->state.in_table_row)
+            append_string(converter, " \\\\ \\hline\n");
+        else {
+            /* if we're not in a row but the table has content, ensure proper ending */
+            append_string(converter, "\\hline\n");
+        }
 
-    char counter_str[16];
-    snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
+        append_string(converter, "\\end{tabular}\n");
+        append_string(converter, "\\caption{Table ");
 
-    append_string(converter, counter_str);
-    append_string(converter, "}\n");
+        char counter_str[16];
+        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
 
-    append_string(converter, "\\end{table}\n\n");
+        append_string(converter, counter_str);
+        append_string(converter, "}\n");
+        append_string(converter, "\\end{table}\n\n");
+    }
+
     converter->state.in_table = 0;
-
     converter->state.in_table_row = 0;
     converter->state.in_table_cell = 0;
 }
@@ -212,14 +227,13 @@ static void end_table(LaTeXConverter* converter) {
 static void begin_table_row(LaTeXConverter* converter) {
     converter->state.in_table_row = 1;
     converter->state.current_column = 0;
-
-    if (converter->state.current_column == 0) 
-        append_string(converter, "\n");
-    else append_string(converter, " \\\\\n");
 }
 
 static void end_table_row(LaTeXConverter* converter) {
-    converter->state.in_table_row = 0;
+    if (converter->state.in_table_row) {
+        append_string(converter, " \\\\ \\hline\n");
+        converter->state.in_table_row = 0;
+    }
 }
 
 static void begin_table_cell(LaTeXConverter* converter, int is_header) {
@@ -242,23 +256,43 @@ static void end_table_cell(LaTeXConverter* converter, int is_header) {
 
 static int count_table_columns(HTMLNode* node) {
     if (!node || !node->children) return 1;
-    HTMLNode* first_row = node->children;
+    int max_columns = 0;
+    HTMLNode* row = node->children;
 
-    while (first_row && (!first_row->tag || strcmp(first_row->tag, "tr") != 0))
-        first_row = first_row->next;
+    /* find the first row to start with */
+    while (row && (!row->tag || strcmp(row->tag, "tr") != 0))
+        row = row->next;
 
-    if (!first_row) return 1;
-    int columns = 0;
-    HTMLNode* cell = first_row->children;
+    /* count columns in all rows and find the maximum */
+    while (row) {
+        if (row->tag && strcmp(row->tag, "tr") == 0) {
+            int columns = 0;
+            HTMLNode* cell = row->children;
 
-    while (cell) {
-        if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0))
-            columns++;
+            while (cell) {
+                if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
+                    columns++;
 
-        cell = cell->next;
+                    /* check for colspan attribute */
+                    char* colspan_attr = get_attribute(cell->attributes, "colspan");
+
+                    if (colspan_attr) {
+                        int colspan = atoi(colspan_attr);
+                        if (colspan > 1) columns += (colspan - 1);
+                    }
+                }
+
+                cell = cell->next;
+            }
+
+            if (columns > max_columns)
+                max_columns = columns;
+        }
+
+        row = row->next;
     }
 
-    return columns > 0 ? columns : 1;
+    return max_columns > 0 ? max_columns : 1;
 }
 
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
@@ -437,33 +471,59 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     /* table support */
     else if (strcmp(node->tag, "table") == 0) {
         int columns = count_table_columns(node);
-        converter->state.table_columns = columns;
-
-        begin_table(converter);
-        append_string(converter, "{");
-
-        for (int i = 0; i < columns; i++)
-            append_string(converter, "l");
-
-        append_string(converter, "}\n");
+        begin_table(converter, columns);
         convert_children(converter, node);
         end_table(converter);
-    }
+}
     else if (strcmp(node->tag, "tr") == 0) {
+        converter->state.current_column = 0;
         begin_table_row(converter);
         convert_children(converter, node);
         end_table_row(converter);
-    }
-    else if (strcmp(node->tag, "td") == 0) {
-        begin_table_cell(converter, 0);
-        convert_children(converter, node);
-        end_table_cell(converter, 0);
-    }
-    else if (strcmp(node->tag, "th") == 0) {
-        begin_table_cell(converter, 1);
-        convert_children(converter, node);
-        end_table_cell(converter, 1);
+}
+    else if (strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0) {
+        int is_header = (strcmp(node->tag, "th") == 0);
+
+        /* handle colspan */
+        char* colspan_attr = get_attribute(node->attributes, "colspan");
+        int colspan = 1;
+
+        if (colspan_attr) {
+            colspan = atoi(colspan_attr);
+            if (colspan < 1) colspan = 1;
         }
+
+        /* add column separator if needed */
+        if (converter->state.current_column > 0)
+            append_string(converter, " & ");
+
+        /* handle header formatting */
+        if (is_header)
+            append_string(converter, "\\textbf{");
+
+        /* convert cell content */
+        converter->state.in_table_cell = 1;
+
+        convert_children(converter, node);
+        converter->state.in_table_cell = 0;
+
+        /* end header formatting */
+        if (is_header)
+            append_string(converter, "}");
+
+        /* update column count for colspan */
+        converter->state.current_column += colspan;
+
+        /* add empty placeholders for additional colspan columns */
+        for (int i = 1; i < colspan; i++) {
+            converter->state.current_column++;
+            if (converter->state.current_column > 0)
+                append_string(converter, " & ");
+            
+            /* empty cell for colspan */
+            append_string(converter, " ");
+        }
+    }
     else {
         /* unknown tag, just convert children */
         convert_children(converter, node);

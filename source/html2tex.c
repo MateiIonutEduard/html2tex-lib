@@ -18,6 +18,15 @@ LaTeXConverter* html2tex_create(void) {
     converter->state.in_list = 0;
     converter->state.table_counter = 0;
 
+    converter->state.in_table = 0;
+    converter->state.in_table_row = 0;
+
+    converter->state.in_table_cell = 0;
+    converter->state.table_columns = 0;
+
+    converter->state.current_column = 0;
+    converter->state.table_caption = NULL;
+
     converter->error_code = 0;
     converter->error_message[0] = '\0';
     return converter;
@@ -39,16 +48,25 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
     converter->error_code = 0;
     converter->error_message[0] = '\0';
 
+    /* free any existing caption */
+    if (converter->state.table_caption) {
+        free(converter->state.table_caption);
+        converter->state.table_caption = NULL;
+    }
+
     /* add LaTeX document preamble */
     append_string(converter, "\\documentclass{article}\n");
     append_string(converter, "\\usepackage{hyperref}\n");
 
     append_string(converter, "\\usepackage{ulem}\n");
     append_string(converter, "\\usepackage[table]{xcolor}\n");
+
+	append_string(converter, "\\usepackage{tabularx}\n");
     append_string(converter, "\\begin{document}\n\n");
 
     /* parse HTML and convert */
     HTMLNode* root = html2tex_parse(html);
+
     if (root) {
         convert_children(converter, root);
         html2tex_free_node(root);
@@ -78,6 +96,10 @@ const char* html2tex_get_error_message(const LaTeXConverter* converter) {
 
 void html2tex_destroy(LaTeXConverter* converter) {
     if (!converter) return;
+
+    /* free table caption if it exists */
+    if (converter->state.table_caption)
+        free(converter->state.table_caption);
 
     if (converter->output)
         free(converter->output);

@@ -181,6 +181,202 @@ static void apply_color(LaTeXConverter* converter, const char* color_value, int 
     free(hex_color);
 }
 
+static void begin_table(LaTeXConverter* converter, int columns) {
+    converter->state.table_counter++;
+    converter->state.in_table = 1;
+
+    converter->state.table_columns = columns;
+    converter->state.current_column = 0;
+    converter->state.table_caption = NULL;
+
+    append_string(converter, "\\begin{table}[h]\n\\centering\n");
+    append_string(converter, "\\begin{tabular}{|");
+
+    /* add vertical lines between columns */
+    for (int i = 0; i < columns; i++)
+        append_string(converter, "c|");
+
+    append_string(converter, "}\n\\hline\n");
+}
+
+static void end_table(LaTeXConverter* converter) {
+    if (converter->state.in_table) {
+        append_string(converter, "\\end{tabular}\n");
+
+        if (converter->state.table_caption) {
+            append_string(converter, "\\caption{");
+            escape_latex(converter, converter->state.table_caption);
+            append_string(converter, "}\n");
+
+            /* free the caption memory */
+            free(converter->state.table_caption);
+            converter->state.table_caption = NULL;
+        }
+        else {
+            /* fallback to default caption */
+            append_string(converter, "\\caption{Table ");
+            char counter_str[16];
+
+            snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
+            append_string(converter, counter_str);
+            append_string(converter, "}\n");
+        }
+
+        append_string(converter, "\\end{table}\n\n");
+    }
+
+    converter->state.in_table = 0;
+    converter->state.in_table_row = 0;
+    converter->state.in_table_cell = 0;
+}
+
+static void begin_table_row(LaTeXConverter* converter) {
+    converter->state.in_table_row = 1;
+    converter->state.current_column = 0;
+}
+
+static void end_table_row(LaTeXConverter* converter) {
+    if (converter->state.in_table_row) {
+        append_string(converter, " \\\\ \\hline\n");
+        converter->state.in_table_row = 0;
+    }
+}
+
+static void begin_table_cell(LaTeXConverter* converter, int is_header) {
+    converter->state.in_table_cell = 1;
+    converter->state.current_column++;
+
+    if (converter->state.current_column > 1)
+        append_string(converter, " & ");
+
+    if (is_header)
+        append_string(converter, "\\textbf{");
+}
+
+static void end_table_cell(LaTeXConverter* converter, int is_header) {
+    if (is_header)
+        append_string(converter, "}");
+
+    converter->state.in_table_cell = 0;
+}
+
+static int count_table_columns(HTMLNode* node) {
+    if (!node) return 1;
+    int max_columns = 0;
+
+    /* look through all direct children to find rows */
+    HTMLNode* child = node->children;
+
+    while (child) {
+        if (child->tag) {
+            if (child->tag) {
+                /* skip caption elements when counting columns */
+                if (strcmp(child->tag, "caption") == 0) {
+                    child = child->next;
+                    continue;
+                }
+            }
+
+            if (strcmp(child->tag, "tr") == 0) {
+                /* this is a row - count its cells */
+                int row_columns = 0;
+                HTMLNode* cell = child->children;
+
+                while (cell) {
+                    if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
+                        char* colspan_attr = get_attribute(cell->attributes, "colspan");
+                        int colspan = 1;
+
+                        if (colspan_attr) {
+                            colspan = atoi(colspan_attr);
+                            if (colspan < 1) colspan = 1;
+                        }
+
+                        row_columns += colspan;
+                    }
+
+                    cell = cell->next;
+                }
+
+                if (row_columns > max_columns)
+                    max_columns = row_columns;
+            }
+            else if (strcmp(child->tag, "thead") == 0 || strcmp(child->tag, "tbody") == 0 || strcmp(child->tag, "tfoot") == 0) {
+                /* recursively count columns in table sections */
+                int section_columns = count_table_columns(child);
+
+                if (section_columns > max_columns)
+                    max_columns = section_columns;
+            }
+        }
+
+        child = child->next;
+    }
+
+    return max_columns > 0 ? max_columns : 1;
+}
+
+/* new function to extract caption text */
+static char* extract_caption_text(HTMLNode* node) {
+    if (!node) return NULL;
+    size_t buffer_size = 256;
+
+    char* buffer = malloc(buffer_size);
+    if (!buffer) return NULL;
+
+    buffer[0] = '\0';
+    size_t current_length = 0;
+
+    /* process the current node and its children, but not siblings */
+    if (!node->tag && node->content) {
+        /* this is a text node */
+        size_t content_len = strlen(node->content);
+
+        if (current_length + content_len + 1 > buffer_size) {
+            buffer_size = (current_length + content_len + 1) * 2;
+            char* new_buffer = realloc(buffer, buffer_size);
+
+            if (!new_buffer) {
+                free(buffer);
+                return NULL;
+            }
+
+            buffer = new_buffer;
+        }
+
+        strcat(buffer, node->content);
+        current_length += content_len;
+    }
+
+    /* process children recursively */
+    if (node->children) {
+        char* child_text = extract_caption_text(node->children);
+
+        if (child_text) {
+            size_t child_len = strlen(child_text);
+
+            if (current_length + child_len + 1 > buffer_size) {
+                buffer_size = (current_length + child_len + 1) * 2;
+                char* new_buffer = realloc(buffer, buffer_size);
+
+                if (!new_buffer) {
+                    free(buffer);
+                    free(child_text);
+                    return NULL;
+                }
+
+                buffer = new_buffer;
+            }
+
+            strcat(buffer, child_text);
+            current_length += child_len;
+            free(child_text);
+        }
+    }
+
+    return buffer;
+}
+
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return;
 
@@ -354,6 +550,97 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         append_string(converter, "\\hrulefill\n\n");
     else if (strcmp(node->tag, "div") == 0)
         convert_children(converter, node);
+    /* table support */
+    else if (strcmp(node->tag, "table") == 0) {
+        int columns = count_table_columns(node);
+        begin_table(converter, columns);
+
+        /* convert all children including caption */
+        HTMLNode* child = node->children;
+
+        while (child) {
+            convert_node(converter, child);
+            child = child->next;
+        }
+
+        end_table(converter);
+    }
+    else if (strcmp(node->tag, "caption") == 0) {
+        /* Handle table caption */
+        if (converter->state.in_table) {
+            /* Free any existing caption */
+            if (converter->state.table_caption) {
+                free(converter->state.table_caption);
+                converter->state.table_caption = NULL;
+            }
+
+            /* Extract caption text */
+            converter->state.table_caption = extract_caption_text(node);
+        }
+        else {
+            /* If not in table, just convert as normal text */
+            convert_children(converter, node);
+        }
+    }
+    else if (strcmp(node->tag, "thead") == 0 || strcmp(node->tag, "tbody") == 0 || strcmp(node->tag, "tfoot") == 0)
+        convert_children(converter, node);
+    else if (strcmp(node->tag, "tr") == 0) {
+            converter->state.current_column = 0;
+            begin_table_row(converter);
+            convert_children(converter, node);
+            end_table_row(converter);
+            }
+    else if (strcmp(node->tag, "thead") == 0 || strcmp(node->tag, "tbody") == 0 || strcmp(node->tag, "tfoot") == 0)
+        convert_children(converter, node);
+    else if (strcmp(node->tag, "tr") == 0) {
+        converter->state.current_column = 0;
+        begin_table_row(converter);
+        convert_children(converter, node);
+        end_table_row(converter);
+}
+    else if (strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0) {
+        int is_header = (strcmp(node->tag, "th") == 0);
+
+        /* handle colspan */
+        char* colspan_attr = get_attribute(node->attributes, "colspan");
+        int colspan = 1;
+
+        if (colspan_attr) {
+            colspan = atoi(colspan_attr);
+            if (colspan < 1) colspan = 1;
+        }
+
+        /* add column separator if needed */
+        if (converter->state.current_column > 0)
+            append_string(converter, " & ");
+
+        /* handle header formatting */
+        if (is_header)
+            append_string(converter, "\\textbf{");
+
+        /* convert cell content */
+        converter->state.in_table_cell = 1;
+
+        convert_children(converter, node);
+        converter->state.in_table_cell = 0;
+
+        /* end header formatting */
+        if (is_header)
+            append_string(converter, "}");
+
+        /* update column count for colspan */
+        converter->state.current_column += colspan;
+
+        /* add empty placeholders for additional colspan columns */
+        for (int i = 1; i < colspan; i++) {
+            converter->state.current_column++;
+            if (converter->state.current_column > 0)
+                append_string(converter, " & ");
+            
+            /* empty cell for colspan */
+            append_string(converter, " ");
+        }
+    }
     else {
         /* unknown tag, just convert children */
         convert_children(converter, node);

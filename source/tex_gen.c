@@ -112,6 +112,17 @@ static char* extract_color_from_style(const char* style, const char* property) {
             char* value = colon + 1;
             while (*value == ' ') value++;
 
+            /* handle !important in CSS values */
+            char* important_pos = strstr(value, "!important");
+
+            if (important_pos) {
+                /* trim trailing whitespace */
+                *important_pos = '\0';
+                
+                char* end = value + strlen(value) - 1;
+                while (end > value && isspace(*end)) *end-- = '\0';
+            }
+
             if (strcmp(prop, property) == 0) {
                 char* result = strdup(value);
                 free(style_copy);

@@ -107,6 +107,7 @@ CSSProperties* parse_css_style(const char* style_str) {
 
             /* trim value and remove !important */
             char* cleaned_value = clean_css_value(value);
+
             if (!cleaned_value) {
                 token = strtok(NULL, ";");
                 continue;
@@ -174,83 +175,95 @@ CSSProperties* parse_css_style(const char* style_str) {
 int css_length_to_pt(const char* length_str) {
     if (!length_str) return 0;
 
+    /* clean the value first in case it has !important */
+    char* cleaned = clean_css_value(length_str);
+    if (!cleaned) return 0;
+
     double value;
     char unit[10] = "";
 
-    if (sscanf(length_str, "%lf%s", &value, unit) < 1)
+    if (sscanf(cleaned, "%lf%s", &value, unit) < 1) {
+        free(cleaned);
         return 0;
+    }
+
+    int result = 0;
 
     /* convert to points */
     if (strcmp(unit, "px") == 0) {
         /* assuming 96px = 1inch = 72pt */
-        return (int)(value * 72.0 / 96.0);
+        result = (int)(value * 72.0 / 96.0);
     }
     else if (strcmp(unit, "pt") == 0)
-        return (int)value;
+        result = (int)value;
     else if (strcmp(unit, "em") == 0) {
         /* 1em ≈ 10pt in LaTeX */
-        return (int)(value * 10.0);
+        result = (int)(value * 10.0);
     }
     else if (strcmp(unit, "rem") == 0)
-        return (int)(value * 10.0);
+        result = (int)(value * 10.0);
     else if (strcmp(unit, "%") == 0) {
         /* percentage of text width - handle differently */
-        return (int)(value * 0.01 * 400); /* approximation */
+        result = (int)(value * 0.01 * 400); /* approximation */
     }
     else if (strcmp(unit, "cm") == 0)
-        return (int)(value * 28.346);
+        result = (int)(value * 28.346);
     else if (strcmp(unit, "mm") == 0)
-        return (int)(value * 2.8346);
+        result = (int)(value * 2.8346);
     else if (strcmp(unit, "in") == 0)
-        return (int)(value * 72.0);
+        result = (int)(value * 72.0);
+    else
+        result = (int)value; /* default assumption */
 
-    /* default assumption */
-    return (int)value;
+    free(cleaned);
+    return result;
 }
 
 /* convert CSS color to hex format */
 char* css_color_to_hex(const char* color_value) {
     if (!color_value) return NULL;
 
+    /* clean the value first in case it has !important */
+    char* cleaned = clean_css_value(color_value);
+
+    if (!cleaned) return NULL;
     char* result = NULL;
 
-    if (color_value[0] == '#') {
+    if (cleaned[0] == '#') {
         /* hex color */
-        if (strlen(color_value) == 4) { 
+        if (strlen(cleaned) == 4) { 
             /* #RGB format */
             result = malloc(7);
 
             snprintf(result, 7, "%c%c%c%c%c%c",
-                color_value[1], color_value[1],
-                color_value[2], color_value[2],
-                color_value[3], color_value[3]);
+                cleaned[1], cleaned[1],
+                cleaned[2], cleaned[2],
+                cleaned[3], cleaned[3]);
         }
-        else { 
-            /* #RRGGBB format */
-            result = strdup(color_value + 1);
-        }
+        else /* #RRGGBB format */
+            result = strdup(cleaned + 1);
     }
-    else if (strncmp(color_value, "rgb(", 4) == 0) {
+    else if (strncmp(cleaned, "rgb(", 4) == 0) {
         /* RGB color */
         int r, g, b;
 
-        if (sscanf(color_value, "rgb(%d, %d, %d)", &r, &g, &b) == 3) {
+        if (sscanf(cleaned, "rgb(%d, %d, %d)", &r, &g, &b) == 3) {
             result = malloc(7);
             snprintf(result, 7, "%02X%02X%02X", r, g, b);
         }
     }
-    else if (strncmp(color_value, "rgba(", 5) == 0) {
+    else if (strncmp(cleaned, "rgba(", 5) == 0) {
         /* RGBA color - ignore alpha */
         int r, g, b;
         float a;
 
-        if (sscanf(color_value, "rgba(%d, %d, %d, %f)", &r, &g, &b, &a) == 4) {
+        if (sscanf(cleaned, "rgba(%d, %d, %d, %f)", &r, &g, &b, &a) == 4) {
             result = malloc(7);
             snprintf(result, 7, "%02X%02X%02X", r, g, b);
         }
     }
     else {
-        /* Named colors */
+        /* named colors */
         struct {
             const char* name;
             const char* hex;
@@ -265,21 +278,23 @@ char* css_color_to_hex(const char* color_value) {
             {"aqua", "00FFFF"}, {"teal", "008080"},
             {"navy", "000080"}, {"fuchsia", "FF00FF"},
             {"purple", "800080"}, {"orange", "FFA500"},
+            {"transparent", "FFFFFF"}, /* treat transparent as white */
             {NULL, NULL}
         };
 
         for (int i = 0; color_map[i].name; i++) {
-            if (strcasecmp(color_value, color_map[i].name) == 0) {
+            if (strcasecmp(cleaned, color_map[i].name) == 0) {
                 result = strdup(color_map[i].hex);
                 break;
             }
         }
 
-        if (!result) {
+        if (!result)
             /* default to black for unknown colors */
             result = strdup("000000");
-        }
     }
+
+    free(cleaned);
 
     if (result) {
         /* convert to uppercase */
@@ -290,9 +305,11 @@ char* css_color_to_hex(const char* color_value) {
     return result;
 }
 
+
 /* apply CSS properties to LaTeX converter */
 void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name) {
     if (!converter || !props) return;
+
     int is_block = is_block_element(tag_name);
     int is_inline = is_inline_element(tag_name);
 
@@ -327,6 +344,7 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
     if (is_block) {
         if (props->margin_top) {
             int pt = css_length_to_pt(props->margin_top);
+
             if (pt > 0) {
                 char margin_cmd[32];
                 snprintf(margin_cmd, sizeof(margin_cmd), "\\vspace*{%dpt}\n", pt);
@@ -338,33 +356,51 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
             int pt = css_length_to_pt(props->margin_bottom);
             if (pt > 0) converter->state.pending_margin_bottom = pt;
         }
+
+        /* horizontal margins */
+        if (props->margin_left) {
+            int pt = css_length_to_pt(props->margin_left);
+
+            if (pt > 0) {
+                char margin_cmd[32];
+                snprintf(margin_cmd, sizeof(margin_cmd), "\\hspace*{%dpt}", pt);
+                append_string(converter, margin_cmd);
+            }
+        }
     }
 
     /* background color */
     if (props->background_color) {
         char* hex_color = css_color_to_hex(props->background_color);
-
-        if (hex_color) {
+        if (hex_color && strcmp(hex_color, "FFFFFF") != 0) { 
+            /* skip white background */
             append_string(converter, "\\colorbox[HTML]{");
+
             append_string(converter, hex_color);
             append_string(converter, "}{");
 
             free(hex_color);
             converter->state.css_braces++;
         }
+        else if (hex_color)
+            free(hex_color);
     }
 
     /* text color */
     if (props->color) {
         char* hex_color = css_color_to_hex(props->color);
-        if (hex_color) {
+        if (hex_color && strcmp(hex_color, "000000") != 0) { 
+            /* skip the black text */
             append_string(converter, "\\textcolor[HTML]{");
+
             append_string(converter, hex_color);
             append_string(converter, "}{");
 
             free(hex_color);
             converter->state.css_braces++;
         }
+        else if (hex_color)
+            free(hex_color);
     }
 
     /* font weight */
@@ -373,6 +409,11 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
             strcmp(props->font_weight, "bolder") == 0 ||
             atoi(props->font_weight) >= 600) {
             append_string(converter, "\\textbf{");
+            converter->state.css_braces++;
+        }
+        else if (strcmp(props->font_weight, "lighter") == 0 ||
+            atoi(props->font_weight) <= 300) {
+            append_string(converter, "\\textmd{");
             converter->state.css_braces++;
         }
     }
@@ -385,6 +426,10 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
         }
         else if (strcmp(props->font_style, "oblique") == 0) {
             append_string(converter, "\\textsl{");
+            converter->state.css_braces++;
+        }
+        else if (strcmp(props->font_style, "normal") == 0) {
+            append_string(converter, "\\textup{");
             converter->state.css_braces++;
         }
     }
@@ -415,8 +460,14 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
             append_string(converter, "\\underline{");
             converter->state.css_braces++;
         }
+
         if (strstr(props->text_decoration, "line-through")) {
             append_string(converter, "\\sout{");
+            converter->state.css_braces++;
+        }
+
+        if (strstr(props->text_decoration, "overline")) {
+            append_string(converter, "\\overline{");
             converter->state.css_braces++;
         }
     }
@@ -426,22 +477,28 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
         int pt = css_length_to_pt(props->font_size);
         if (pt > 0) {
             if (pt <= 8)
-                append_string(converter, "\\tiny{");
+                append_string(converter, "{\\tiny ");
             else if (pt <= 10)
-                append_string(converter, "\\small{");
+                append_string(converter, "{\\small ");
             else if (pt <= 12)
-                append_string(converter, "\\normalsize{");
+                append_string(converter, "{\\normalsize ");
             else if (pt <= 14)
-                append_string(converter, "\\large{");
+                append_string(converter, "{\\large ");
             else if (pt <= 18)
-                append_string(converter, "\\Large{");
+                append_string(converter, "{\\Large ");
             else if (pt <= 24)
-                append_string(converter, "\\LARGE{");
+                append_string(converter, "{\\LARGE ");
             else
-                append_string(converter, "\\huge{");
+                append_string(converter, "{\\huge ");
 
             converter->state.css_braces++;
         }
+    }
+
+    /* border support */
+    if (props->border && strstr(props->border, "solid")) {
+        append_string(converter, "\\framebox{");
+        converter->state.css_braces++;
     }
 }
 
@@ -453,7 +510,7 @@ void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const c
     /* close all open braces */
     for (int i = 0; i < converter->state.css_braces; i++)
         append_string(converter, "}");
-
+    
     converter->state.css_braces = 0;
 
     /* close text alignment environments */
@@ -473,6 +530,17 @@ void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const c
 
             append_string(converter, margin_cmd);
             converter->state.pending_margin_bottom = 0;
+        }
+
+        /* right margin at end */
+        if (props->margin_right) {
+            int pt = css_length_to_pt(props->margin_right);
+
+            if (pt > 0) {
+                char margin_cmd[32];
+                snprintf(margin_cmd, sizeof(margin_cmd), "\\hspace*{%dpt}", pt);
+                append_string(converter, margin_cmd);
+            }
         }
     }
 

@@ -12,6 +12,7 @@ extern "C" {
 	
 	typedef struct ConverterState ConverterState;
     typedef struct LaTeXConverter LaTeXConverter;
+	typedef struct CSSStyle CSSStyle;
 
     /* HTML node structure */
     struct HTMLNode {
@@ -48,6 +49,17 @@ extern "C" {
         int current_column;
 		char* table_caption;
     };
+	
+	struct CSSStyle {
+		char* color;
+		char* background_color;
+		
+		char* font_weight;
+		char* font_style;
+		
+		char* text_decoration;
+		char* text_align;
+	};
 
     /* main converter structure */
     struct LaTeXConverter {
@@ -75,6 +87,11 @@ extern "C" {
     /* utility functions */
     HTMLNode* html2tex_parse(const char* html);
     void html2tex_free_node(HTMLNode* node);
+	
+	/* CSS parser utility functions */
+	CSSStyle* parse_css_style(const char* style_str);
+	void apply_css_style(LaTeXConverter* converter, CSSStyle* style);
+	void free_css_style(CSSStyle* style);
 
 #ifdef __cplusplus
 }

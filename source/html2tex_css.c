@@ -208,6 +208,88 @@ int css_length_to_pt(const char* length_str) {
     return (int)value;
 }
 
+/* convert CSS color to hex format */
+char* css_color_to_hex(const char* color_value) {
+    if (!color_value) return NULL;
+
+    char* result = NULL;
+
+    if (color_value[0] == '#') {
+        /* hex color */
+        if (strlen(color_value) == 4) { 
+            /* #RGB format */
+            result = malloc(7);
+
+            snprintf(result, 7, "%c%c%c%c%c%c",
+                color_value[1], color_value[1],
+                color_value[2], color_value[2],
+                color_value[3], color_value[3]);
+        }
+        else { 
+            /* #RRGGBB format */
+            result = strdup(color_value + 1);
+        }
+    }
+    else if (strncmp(color_value, "rgb(", 4) == 0) {
+        /* RGB color */
+        int r, g, b;
+
+        if (sscanf(color_value, "rgb(%d, %d, %d)", &r, &g, &b) == 3) {
+            result = malloc(7);
+            snprintf(result, 7, "%02X%02X%02X", r, g, b);
+        }
+    }
+    else if (strncmp(color_value, "rgba(", 5) == 0) {
+        /* RGBA color - ignore alpha */
+        int r, g, b;
+        float a;
+
+        if (sscanf(color_value, "rgba(%d, %d, %d, %f)", &r, &g, &b, &a) == 4) {
+            result = malloc(7);
+            snprintf(result, 7, "%02X%02X%02X", r, g, b);
+        }
+    }
+    else {
+        /* Named colors */
+        struct {
+            const char* name;
+            const char* hex;
+        } color_map[] = {
+            {"black", "000000"}, {"white", "FFFFFF"},
+            {"red", "FF0000"}, {"green", "008000"},
+            {"blue", "0000FF"}, {"yellow", "FFFF00"},
+            {"cyan", "00FFFF"}, {"magenta", "FF00FF"},
+            {"gray", "808080"}, {"grey", "808080"},
+            {"silver", "C0C0C0"}, {"maroon", "800000"},
+            {"olive", "808000"}, {"lime", "00FF00"},
+            {"aqua", "00FFFF"}, {"teal", "008080"},
+            {"navy", "000080"}, {"fuchsia", "FF00FF"},
+            {"purple", "800080"}, {"orange", "FFA500"},
+            {NULL, NULL}
+        };
+
+        for (int i = 0; color_map[i].name; i++) {
+            if (strcasecmp(color_value, color_map[i].name) == 0) {
+                result = strdup(color_map[i].hex);
+                break;
+            }
+        }
+
+        if (!result) {
+            /* default to black for unknown colors */
+            result = strdup("000000");
+        }
+    }
+
+    if (result) {
+        /* convert to uppercase */
+        for (char* p = result; *p; p++)
+            *p = toupper(*p);
+    }
+
+    return result;
+}
+
 /* free CSS properties */
 void free_css_properties(CSSProperties* props) {
     if (!props) return;

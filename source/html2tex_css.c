@@ -56,3 +56,20 @@ int is_block_element(const char* tag_name) {
 
     return 0;
 }
+
+/* check if element is inline */
+int is_inline_element(const char* tag_name) {
+    if (!tag_name) return 0;
+
+    const char* inline_tags[] = {
+        "span", "a", "strong", "em", "b", "i", "u", "code",
+        "font", "mark", "small", "sub", "sup", "time", NULL
+    };
+
+    for (int i = 0; inline_tags[i]; i++) {
+        if (strcmp(tag_name, inline_tags[i]) == 0)
+            return 1;
+    }
+
+    return 0;
+}

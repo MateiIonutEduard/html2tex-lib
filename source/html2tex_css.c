@@ -322,6 +322,7 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
 
     /* track applied environments for proper closing */
     converter->state.css_environments = 0;
+	converter->state.css_braces = 0;
 
     /* text alignment (block elements only) */
     if (is_block && props->text_align) {

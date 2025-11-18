@@ -73,3 +73,9 @@ int is_inline_element(const char* tag_name) {
 
     return 0;
 }
+
+/* check if CSS value contains !important */
+static int has_important(const char* value) {
+    if (!value) return 0;
+    return (strstr(value, "!important") != NULL);
+}

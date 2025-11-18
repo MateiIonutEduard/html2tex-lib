@@ -290,6 +290,161 @@ char* css_color_to_hex(const char* color_value) {
     return result;
 }
 
+/* apply CSS properties to LaTeX converter */
+void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name) {
+    if (!converter || !props) return;
+    int is_block = is_block_element(tag_name);
+    int is_inline = is_inline_element(tag_name);
+
+    /* track applied environments for proper closing */
+    converter->state.css_environments = 0;
+
+    /* text alignment (block elements only) */
+    if (is_block && props->text_align) {
+        if (strcmp(props->text_align, "center") == 0) {
+            /* center environment */
+            append_string(converter, "\\begin{center}\n");
+            converter->state.css_environments |= 1;
+        }
+        else if (strcmp(props->text_align, "right") == 0) {
+            /* flushright environment */
+            append_string(converter, "\\begin{flushright}\n");
+            converter->state.css_environments |= 2;
+        }
+        else if (strcmp(props->text_align, "left") == 0) {
+            /* flushleft environment */
+            append_string(converter, "\\begin{flushleft}\n");
+            converter->state.css_environments |= 4;
+        }
+        else if (strcmp(props->text_align, "justify") == 0) {
+            /* justifying command */
+            append_string(converter, "\\justifying\n");
+            converter->state.css_environments |= 8;
+        }
+    }
+
+    /* margins (block elements) */
+    if (is_block) {
+        if (props->margin_top) {
+            int pt = css_length_to_pt(props->margin_top);
+            if (pt > 0) {
+                char margin_cmd[32];
+                snprintf(margin_cmd, sizeof(margin_cmd), "\\vspace*{%dpt}\n", pt);
+                append_string(converter, margin_cmd);
+            }
+        }
+
+        if (props->margin_bottom) {
+            int pt = css_length_to_pt(props->margin_bottom);
+            if (pt > 0) converter->state.pending_margin_bottom = pt;
+        }
+    }
+
+    /* background color */
+    if (props->background_color) {
+        char* hex_color = css_color_to_hex(props->background_color);
+
+        if (hex_color) {
+            append_string(converter, "\\colorbox[HTML]{");
+            append_string(converter, hex_color);
+            append_string(converter, "}{");
+
+            free(hex_color);
+            converter->state.css_braces++;
+        }
+    }
+
+    /* text color */
+    if (props->color) {
+        char* hex_color = css_color_to_hex(props->color);
+        if (hex_color) {
+            append_string(converter, "\\textcolor[HTML]{");
+            append_string(converter, hex_color);
+            append_string(converter, "}{");
+
+            free(hex_color);
+            converter->state.css_braces++;
+        }
+    }
+
+    /* font weight */
+    if (props->font_weight) {
+        if (strcmp(props->font_weight, "bold") == 0 ||
+            strcmp(props->font_weight, "bolder") == 0 ||
+            atoi(props->font_weight) >= 600) {
+            append_string(converter, "\\textbf{");
+            converter->state.css_braces++;
+        }
+    }
+
+    /* font style */
+    if (props->font_style) {
+        if (strcmp(props->font_style, "italic") == 0) {
+            append_string(converter, "\\textit{");
+            converter->state.css_braces++;
+        }
+        else if (strcmp(props->font_style, "oblique") == 0) {
+            append_string(converter, "\\textsl{");
+            converter->state.css_braces++;
+        }
+    }
+
+    /* font family */
+    if (props->font_family) {
+        if (strstr(props->font_family, "monospace") ||
+            strstr(props->font_family, "Courier")) {
+            append_string(converter, "\\texttt{");
+            converter->state.css_braces++;
+        }
+        else if (strstr(props->font_family, "sans") ||
+            strstr(props->font_family, "Arial") ||
+            strstr(props->font_family, "Helvetica")) {
+            append_string(converter, "\\textsf{");
+            converter->state.css_braces++;
+        }
+        else if (strstr(props->font_family, "serif") ||
+            strstr(props->font_family, "Times")) {
+            append_string(converter, "\\textrm{");
+            converter->state.css_braces++;
+        }
+    }
+
+    /* text decoration */
+    if (props->text_decoration) {
+        if (strstr(props->text_decoration, "underline")) {
+            append_string(converter, "\\underline{");
+            converter->state.css_braces++;
+        }
+        if (strstr(props->text_decoration, "line-through")) {
+            append_string(converter, "\\sout{");
+            converter->state.css_braces++;
+        }
+    }
+
+    /* font size */
+    if (props->font_size) {
+        int pt = css_length_to_pt(props->font_size);
+        if (pt > 0) {
+            if (pt <= 8)
+                append_string(converter, "\\tiny{");
+            else if (pt <= 10)
+                append_string(converter, "\\small{");
+            else if (pt <= 12)
+                append_string(converter, "\\normalsize{");
+            else if (pt <= 14)
+                append_string(converter, "\\large{");
+            else if (pt <= 18)
+                append_string(converter, "\\Large{");
+            else if (pt <= 24)
+                append_string(converter, "\\LARGE{");
+            else
+                append_string(converter, "\\huge{");
+
+            converter->state.css_braces++;
+        }
+    }
+}
+
 /* free CSS properties */
 void free_css_properties(CSSProperties* props) {
     if (!props) return;

@@ -48,6 +48,12 @@ extern "C" {
         int table_columns;
         int current_column;
 		char* table_caption;
+		
+		/* CSS conversion state */
+		int css_braces;
+		
+		int css_environments;
+		int pending_margin_bottom;
     };
 	
 	struct CSSProperties {

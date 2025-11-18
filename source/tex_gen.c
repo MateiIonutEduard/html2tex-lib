@@ -453,48 +453,26 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* parse color attribute and style background-color */
         char* color_attr = get_attribute(node->attributes, "color");
         char* style_attr = get_attribute(node->attributes, "style");
-
-        /* direct color attribute */
-        char* text_color = color_attr;
-        char* bg_color = NULL;
-
-        /* extract background color from style if present */
+        char* text_color = NULL;
+        
+        /* extract text color from style if present */
         if (style_attr)
-            bg_color = extract_color_from_style(style_attr, "background-color");
-
-        int has_text_color = (text_color != NULL);
-        int has_bg_color = (bg_color != NULL);
-
-        /* apply colors with proper LaTeX nesting */
-        if (has_bg_color && has_text_color) {
-            /* both colors: background first, then text color */
-            apply_color(converter, bg_color, 1);
-            apply_color(converter, text_color, 0);
-
+            text_color = extract_color_from_style(style_attr, "color");
+        
+        if(css_props && text_color) {
+            /* ignore the color attribute, just convert content */
             convert_children(converter, node);
-            append_string(converter, "}}");
         }
-        else if (has_bg_color) {
-            /* only background color */
-            apply_color(converter, bg_color, 1);
+        else if (css_props && !text_color) {
+            /* inline CSS exists, but do not contain color property */
+            if(color_attr) apply_color(converter, color_attr, 0);
 
             convert_children(converter, node);
             append_string(converter, "}");
-        }
-        else if (has_text_color) {
-            /* only text color */
-            apply_color(converter, text_color, 0);
-
-            convert_children(converter, node);
-            append_string(converter, "}");
-        }
-        else {
-            /* no color specified, just convert content */
-            convert_children(converter, node);
         }
 
         /* clean up allocated memory */
-        if (bg_color) free(bg_color);
+        if (text_color) free(text_color);
     }
     else if (strcmp(node->tag, "span") == 0)
         /* CSS properties handle styling, just convert content */

@@ -399,6 +399,15 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
     if (!node->tag) return;
 
+    // CSS properties parsing and application
+    CSSProperties* css_props = NULL;
+
+    char* style_attr = get_attribute(node->attributes, "style");
+    if (style_attr) css_props = parse_css_style(style_attr);
+
+    // apply CSS properties before element content
+    if (css_props) apply_css_properties(converter, css_props, node->tag);
+
     /* handle different HTML tags */
     if (strcmp(node->tag, "p") == 0) {
         append_string(converter, "\n");
@@ -576,20 +585,21 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
         end_table(converter);
     }
+    // added explicit caption handling
     else if (strcmp(node->tag, "caption") == 0) {
-        /* Handle table caption */
+        /* handle table caption */
         if (converter->state.in_table) {
-            /* Free any existing caption */
+            /* free any existing caption */
             if (converter->state.table_caption) {
                 free(converter->state.table_caption);
                 converter->state.table_caption = NULL;
             }
 
-            /* Extract caption text */
+            /* extract caption text */
             converter->state.table_caption = extract_caption_text(node);
         }
         else {
-            /* If not in table, just convert as normal text */
+            /* if not in table, just convert as normal text */
             convert_children(converter, node);
         }
     }
@@ -655,5 +665,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     else {
         /* unknown tag, just convert children */
         convert_children(converter, node);
+    }
+
+    // end CSS properties after element content
+    if (css_props) {
+        end_css_properties(converter, css_props, node->tag);
+        free_css_properties(css_props);
     }
 }

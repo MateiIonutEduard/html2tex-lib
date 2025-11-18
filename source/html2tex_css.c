@@ -9,6 +9,13 @@
 
 #define HT_MAX_CSS_PROPERTIES 50
 
+#ifdef _WIN32
+#define strcasecmp _stricmp
+#define strncasecmp _strnicmp
+#else
+#include <strings.h>
+#endif
+
 /* helper function to remove !important and trim whitespace */
 static char* clean_css_value(char* value) {
     if (!value) return NULL;

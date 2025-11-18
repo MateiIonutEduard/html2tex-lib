@@ -1,4 +1,4 @@
-#include "html2tex.h"
+﻿#include "html2tex.h"
 #include <stdio.h>
 
 #include <stdlib.h>
@@ -168,6 +168,44 @@ CSSProperties* parse_css_style(const char* style_str) {
 
     free(copy);
     return props;
+}
+
+/* convert CSS length to LaTeX points */
+int css_length_to_pt(const char* length_str) {
+    if (!length_str) return 0;
+
+    double value;
+    char unit[10] = "";
+
+    if (sscanf(length_str, "%lf%s", &value, unit) < 1)
+        return 0;
+
+    /* convert to points */
+    if (strcmp(unit, "px") == 0) {
+        /* assuming 96px = 1inch = 72pt */
+        return (int)(value * 72.0 / 96.0);
+    }
+    else if (strcmp(unit, "pt") == 0)
+        return (int)value;
+    else if (strcmp(unit, "em") == 0) {
+        /* 1em ≈ 10pt in LaTeX */
+        return (int)(value * 10.0);
+    }
+    else if (strcmp(unit, "rem") == 0)
+        return (int)(value * 10.0);
+    else if (strcmp(unit, "%") == 0) {
+        /* percentage of text width - handle differently */
+        return (int)(value * 0.01 * 400); /* approximation */
+    }
+    else if (strcmp(unit, "cm") == 0)
+        return (int)(value * 28.346);
+    else if (strcmp(unit, "mm") == 0)
+        return (int)(value * 2.8346);
+    else if (strcmp(unit, "in") == 0)
+        return (int)(value * 72.0);
+
+    /* default assumption */
+    return (int)value;
 }
 
 /* free CSS properties */

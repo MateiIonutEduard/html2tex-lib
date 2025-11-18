@@ -496,52 +496,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* clean up allocated memory */
         if (bg_color) free(bg_color);
     }
-    else if (strcmp(node->tag, "span") == 0) {
-        /* for span tags, if CSS properties exist, they handle all styling */
-        /* if no CSS properties, then check for inline style attributes */
-        if (!css_props) {
-            char* style_attr = get_attribute(node->attributes, "style");
-
-            if (style_attr) {
-                char* text_color = extract_color_from_style(style_attr, "color");
-                char* bg_color = extract_color_from_style(style_attr, "background-color");
-
-                int has_text_color = (text_color != NULL);
-                int has_bg_color = (bg_color != NULL);
-
-                /* apply colors */
-                if (has_bg_color && has_text_color) {
-                    apply_color(converter, bg_color, 1);
-                    apply_color(converter, text_color, 0);
-
-                    convert_children(converter, node);
-                    append_string(converter, "}}");
-                }
-                else if (has_bg_color) {
-                    apply_color(converter, bg_color, 1);
-                    convert_children(converter, node);
-                    append_string(converter, "}");
-                }
-                else if (has_text_color) {
-                    apply_color(converter, text_color, 0);
-                    convert_children(converter, node);
-                    append_string(converter, "}");
-                }
-                else
-                    convert_children(converter, node);
-
-                /* clean up */
-                if (text_color) free(text_color);
-                if (bg_color) free(bg_color);
-            }
-            else
-                convert_children(converter, node);
-        }
-        else {
-            /* CSS properties handle styling, just convert content */
-            convert_children(converter, node);
-        }
-    }
+    else if (strcmp(node->tag, "span") == 0)
+        /* CSS properties handle styling, just convert content */
+        convert_children(converter, node);
     else if (strcmp(node->tag, "a") == 0) {
         char* href = get_attribute(node->attributes, "href");
 

@@ -435,14 +435,28 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         append_string(converter, "}\n\n");
     }
     else if (strcmp(node->tag, "b") == 0 || strcmp(node->tag, "strong") == 0) {
-        append_string(converter, "\\textbf{");
-        convert_children(converter, node);
-        append_string(converter, "}");
+        /* only apply bold if CSS hasn't already applied it */
+        if (!converter->state.has_bold) {
+            append_string(converter, "\\textbf{");
+            convert_children(converter, node);
+            append_string(converter, "}");
+        }
+        else {
+            /* CSS already applied bold, just convert children */
+            convert_children(converter, node);
+        }
     }
     else if (strcmp(node->tag, "i") == 0 || strcmp(node->tag, "em") == 0) {
-        append_string(converter, "\\textit{");
-        convert_children(converter, node);
-        append_string(converter, "}");
+        /* only apply italic if CSS hasn't already applied it */
+        if (!converter->state.has_italic) {
+            append_string(converter, "\\textit{");
+            convert_children(converter, node);
+            append_string(converter, "}");
+        }
+        else {
+            /* CSS already applied italic, just convert children */
+            convert_children(converter, node);
+        }
     }
     else if (strcmp(node->tag, "u") == 0) {
         append_string(converter, "\\underline{");
@@ -656,8 +670,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* apply CSS properties first - this will handle cellcolor for table cells */
         if (css_props) apply_css_properties(converter, css_props, node->tag);
 
-        /* handle header formatting */
-        if (is_header) append_string(converter, "\\textbf{");
+        /* handle header formatting - only if CSS hasn't already applied bold */
+        if (is_header && !converter->state.has_bold)
+            append_string(converter, "\\textbf{");
 
         /* convert cell content */
         converter->state.in_table_cell = 1;
@@ -665,8 +680,14 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         converter->state.in_table_cell = 0;
 
         /* end header formatting */
-        if (is_header)
+        if (is_header && !converter->state.has_bold)
             append_string(converter, "}");
+
+        /* end CSS properties after cell content but BEFORE column separators */
+        if (css_props && !(strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0)) {
+            end_css_properties(converter, css_props, node->tag);
+            free_css_properties(css_props);
+        }
 
         /* update column count for colspan */
         converter->state.current_column += colspan;
@@ -680,9 +701,6 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             /* empty cell for colspan */
             append_string(converter, " ");
         }
-
-        /* end CSS properties after cell content */
-        if (css_props) end_css_properties(converter, css_props, node->tag);
     }
     else {
         /* unknown tag, just convert children */

@@ -124,8 +124,8 @@ extern "C" {
 	void free_css_properties(CSSProperties* props);
 
 	/* CSS to LaTeX conversion functions */
-	void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
-	void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
+	void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, HTMLNode* node);
+	void end_css_properties(LaTeXConverter* converter, CSSProperties* props, HTMLNode* node);
 
 	/* utility functions */
 	int css_length_to_pt(const char* length_str);

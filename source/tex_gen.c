@@ -435,7 +435,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         append_string(converter, "}\n\n");
     }
     else if (strcmp(node->tag, "b") == 0 || strcmp(node->tag, "strong") == 0) {
-        /* only apply bold if CSS hasn't already applied it */
+        /* Only apply bold if CSS hasn't already applied it */
         if (!converter->state.has_bold) {
             append_string(converter, "\\textbf{");
             convert_children(converter, node);
@@ -444,10 +444,12 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         else {
             /* CSS already applied bold, just convert children */
             convert_children(converter, node);
+            /* Reset the bold flag so parent elements can apply their own formatting */
+            converter->state.has_bold = 0;
         }
     }
     else if (strcmp(node->tag, "i") == 0 || strcmp(node->tag, "em") == 0) {
-        /* only apply italic if CSS hasn't already applied it */
+        /* Only apply italic if CSS hasn't already applied it */
         if (!converter->state.has_italic) {
             append_string(converter, "\\textit{");
             convert_children(converter, node);
@@ -456,6 +458,8 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         else {
             /* CSS already applied italic, just convert children */
             convert_children(converter, node);
+            /* Reset the italic flag */
+            converter->state.has_italic = 0;
         }
     }
     else if (strcmp(node->tag, "u") == 0) {
@@ -684,9 +688,10 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             append_string(converter, "}");
 
         /* end CSS properties after cell content but BEFORE column separators */
-        if (css_props && !(strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0)) {
+        if (css_props) {
             end_css_properties(converter, css_props, node->tag);
             free_css_properties(css_props);
+            css_props = NULL; /* Prevent double-free later */
         }
 
         /* update column count for colspan */
@@ -707,9 +712,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         convert_children(converter, node);
     }
 
-    /* end CSS properties after element content */
+    /* end CSS properties after element content - but skip for table cells since we handle them separately */
     if (css_props) {
-        end_css_properties(converter, css_props, node->tag);
+        if (!(strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0)) {
+            end_css_properties(converter, css_props, node->tag);
+        }
         free_css_properties(css_props);
     }
 }

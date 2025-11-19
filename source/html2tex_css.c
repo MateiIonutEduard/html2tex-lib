@@ -340,11 +340,11 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
     int is_table_cell = (tag_name && (strcmp(tag_name, "td") == 0 || strcmp(tag_name, "th") == 0));
     int inside_table_cell = converter->state.in_table_cell;
 
-    /* track applied environments for proper closing */
-    converter->state.css_environments = 0;
-
-    /* only reset css_braces if we're not already in a table cell */
-    if (!is_table_cell && !inside_table_cell) converter->state.css_braces = 0;
+    /* for inline elements, don't reset css_braces completely as they might be nested */
+    if (is_block && !inside_table_cell) {
+        converter->state.css_braces = 0;
+        converter->state.css_environments = 0;
+    }
 
     /* text alignment (block elements only) */
     if (is_block && props->text_align && !inside_table_cell) {
@@ -552,17 +552,24 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
 /* end CSS properties (close environments and braces) */
 void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name) {
     if (!converter || !props) return;
+
     int is_block = is_block_element(tag_name);
-
     int inside_table_cell = converter->state.in_table_cell;
-    int is_table_cell = (tag_name && (strcmp(tag_name, "td") == 0 || strcmp(tag_name, "th") == 0));
+    int is_inline = is_inline_element(tag_name);
 
-    /* for table cells, we must close braces immediately */
-    if (is_table_cell || inside_table_cell) {
-        /* close all open braces */
+    /* for inline elements, we need to be more careful about brace closing */
+    if (is_inline && !inside_table_cell) {
+        /* close braces but don't reset all state for inline elements */
         for (int i = 0; i < converter->state.css_braces; i++)
             append_string(converter, "}");
-
+        
+        converter->state.css_braces = 0;
+    }
+    else {
+        /* for block elements and table cells, use normal closing */
+        for (int i = 0; i < converter->state.css_braces; i++)
+            append_string(converter, "}");
+        
         converter->state.css_braces = 0;
     }
 

@@ -58,10 +58,8 @@ extern "C" {
         /* track applied CSS properties */
         int has_bold;
         int has_italic;
-		
         int has_underline;
         int has_color;
-		
         int has_background;
         int has_font_family;
     };

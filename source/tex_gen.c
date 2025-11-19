@@ -435,7 +435,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         append_string(converter, "}\n\n");
     }
     else if (strcmp(node->tag, "b") == 0 || strcmp(node->tag, "strong") == 0) {
-        /* Only apply bold if CSS hasn't already applied it */
+        /* only apply bold if CSS hasn't already applied it */
         if (!converter->state.has_bold) {
             append_string(converter, "\\textbf{");
             convert_children(converter, node);
@@ -444,12 +444,12 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         else {
             /* CSS already applied bold, just convert children */
             convert_children(converter, node);
-            /* Reset the bold flag so parent elements can apply their own formatting */
-            converter->state.has_bold = 0;
+            /* don't reset the bold flag here - let the parent element handle it */
+            /* this prevents premature resetting of CSS state */
         }
     }
     else if (strcmp(node->tag, "i") == 0 || strcmp(node->tag, "em") == 0) {
-        /* Only apply italic if CSS hasn't already applied it */
+        /* only apply italic if CSS hasn't already applied it */
         if (!converter->state.has_italic) {
             append_string(converter, "\\textit{");
             convert_children(converter, node);
@@ -458,7 +458,8 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         else {
             /* CSS already applied italic, just convert children */
             convert_children(converter, node);
-            /* Reset the italic flag */
+
+            /* reset the italic flag */
             converter->state.has_italic = 0;
         }
     }
@@ -671,6 +672,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         if (converter->state.current_column > 0)
             append_string(converter, " & ");
 
+        /* save current CSS brace count before processing this cell */
+        int saved_css_braces = converter->state.css_braces;
+
         /* apply CSS properties first - this will handle cellcolor for table cells */
         if (css_props) apply_css_properties(converter, css_props, node->tag);
 
@@ -686,6 +690,13 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* end header formatting */
         if (is_header && !converter->state.has_bold)
             append_string(converter, "}");
+
+        /* close any braces that were opened by CSS for this specific cell */
+        int braces_opened_in_this_cell = converter->state.css_braces - saved_css_braces;
+        for (int i = 0; i < braces_opened_in_this_cell; i++) {
+            append_string(converter, "}");
+        }
+        converter->state.css_braces = saved_css_braces;
 
         /* end CSS properties after cell content but BEFORE column separators */
         if (css_props) {
@@ -706,7 +717,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             /* empty cell for colspan */
             append_string(converter, " ");
         }
-    }
+        }
     else {
         /* unknown tag, just convert children */
         convert_children(converter, node);

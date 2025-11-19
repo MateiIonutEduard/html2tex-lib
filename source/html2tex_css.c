@@ -557,20 +557,23 @@ void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const c
     int inside_table_cell = converter->state.in_table_cell;
     int is_inline = is_inline_element(tag_name);
 
-    /* for inline elements, we need to be more careful about brace closing */
-    if (is_inline && !inside_table_cell) {
-        /* close braces but don't reset all state for inline elements */
-        for (int i = 0; i < converter->state.css_braces; i++)
-            append_string(converter, "}");
-        
-        converter->state.css_braces = 0;
-    }
-    else {
-        /* for block elements and table cells, use normal closing */
-        for (int i = 0; i < converter->state.css_braces; i++)
-            append_string(converter, "}");
-        
-        converter->state.css_braces = 0;
+    /* For table cells, we handle brace closing separately in the cell processing */
+    if (!inside_table_cell) {
+        /* for inline elements, we need to be more careful about brace closing */
+        if (is_inline) {
+            /* close braces but don't reset all state for inline elements */
+            for (int i = 0; i < converter->state.css_braces; i++)
+                append_string(converter, "}");
+
+            converter->state.css_braces = 0;
+        }
+        else {
+            /* for block elements, use normal closing */
+            for (int i = 0; i < converter->state.css_braces; i++)
+                append_string(converter, "}");
+
+            converter->state.css_braces = 0;
+        }
     }
 
     /* close text alignment environments */

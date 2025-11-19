@@ -691,7 +691,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         if (css_props) {
             end_css_properties(converter, css_props, node->tag);
             free_css_properties(css_props);
-            css_props = NULL; /* Prevent double-free later */
+            css_props = NULL; /* prevent double-free later */
         }
 
         /* update column count for colspan */
@@ -714,9 +714,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
     /* end CSS properties after element content - but skip for table cells since we handle them separately */
     if (css_props) {
-        if (!(strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0)) {
+        if (!(strcmp(node->tag, "td") == 0 || strcmp(node->tag, "th") == 0))
             end_css_properties(converter, css_props, node->tag);
-        }
+        
         free_css_properties(css_props);
     }
 }

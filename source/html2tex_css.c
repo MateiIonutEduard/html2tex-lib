@@ -336,6 +336,7 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
 
     int is_block = is_block_element(tag_name);
     int is_inline = is_inline_element(tag_name);
+
     int is_table_cell = (tag_name && (strcmp(tag_name, "td") == 0 || strcmp(tag_name, "th") == 0));
     int inside_table_cell = converter->state.in_table_cell;
 

@@ -187,7 +187,7 @@ char* get_pretty_html(HTMLNode* root) {
     char* temp_filename = tmpnam(NULL);
     if (!temp_filename) return NULL;
 
-    if (!html2tex_write_pretty_html(root, temp_filename))
+    if (!write_pretty_html(root, temp_filename))
         return NULL;
 
     /* read the file back into a string */

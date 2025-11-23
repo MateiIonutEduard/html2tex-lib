@@ -135,8 +135,9 @@ extern "C" {
 	void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
 	void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
 
-	/* HTML prettifying function */
-	char* html2tex_get_pretty_html(HTMLNode* root);
+	/* HTML prettifying functions */
+	int write_pretty_html(HTMLNode* root, const char* filename);
+	char* get_pretty_html(HTMLNode* root);
 
 	/* utility functions */
 	int css_length_to_pt(const char* length_str);

@@ -41,6 +41,37 @@ static char* escape_html(const char* text) {
     return escaped;
 }
 
+/* Public function to write prettified HTML code to the output file. */
+int write_pretty_html(HTMLNode* root, const char* filename) {
+    if (!root || !filename) return 0;
+    FILE* file = fopen(filename, "w");
+
+    if (!file) {
+        fprintf(stderr, "Error: Could not open file %s for writing\n", filename);
+        return 0;
+    }
+
+    /* write HTML header */
+    fprintf(file, "<!DOCTYPE html>\n<html>\n<head>\n");
+    fprintf(file, "  <meta charset=\"UTF-8\">\n");
+    fprintf(file, "  <title>Parsed HTML Output</title>\n");
+    fprintf(file, "</head>\n<body>\n");
+
+    /* write the parsed content */
+    HTMLNode* child = root->children;
+
+    while (child) {
+        write_pretty_node(file, child, 1, 0);
+        child = child->next;
+    }
+
+    /* write HTML footer */
+    fprintf(file, "</body>\n</html>\n");
+
+    fclose(file);
+    return 1;
+}
+
 /* Recursive function to write the prettified HTML code. */
 static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level, int is_inline) {
     if (!node || !file) return;
@@ -149,7 +180,7 @@ static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level, int 
 }
 
 /* Alternative function that returns prettified HTML as string. */
-char* html2tex_get_pretty_html(HTMLNode* root) {
+char* get_pretty_html(HTMLNode* root) {
     if (!root) return NULL;
 
     /* use a temporary file to build the string */

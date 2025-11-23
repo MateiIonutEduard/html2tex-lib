@@ -41,6 +41,113 @@ static char* escape_html(const char* text) {
     return escaped;
 }
 
+/* Recursive function to write the prettified HTML code. */
+static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level, int is_inline) {
+    if (!node || !file) return;
+    static const char* indent_str = "  ";
+
+    /* create indentation */
+    char* indent = malloc(indent_level * 2 + 1);
+
+    if (indent) {
+        for (int i = 0; i < indent_level; i++) {
+            indent[i * 2] = ' ';
+            indent[i * 2 + 1] = ' ';
+        }
+
+        indent[indent_level * 2] = '\0';
+    }
+
+    if (node->tag) {
+        /* element node */
+        if (!is_inline && indent) fprintf(file, "%s", indent);
+        fprintf(file, "<%s", node->tag);
+
+        /* write the attributes */
+        HTMLAttribute* attr = node->attributes;
+
+        while (attr) {
+            if (attr->value) {
+                char* escaped_value = escape_html(attr->value);
+                fprintf(file, " %s=\"%s\"", attr->key, escaped_value ? escaped_value : attr->value);
+                free(escaped_value);
+            }
+            else
+                fprintf(file, " %s", attr->key);
+
+            attr = attr->next;
+        }
+
+        /* check if this is a self-closing tag or has children */
+        if (!node->children && !node->content) {
+            fprintf(file, " />\n");
+        }
+        else {
+            fprintf(file, ">");
+
+            /* check if this should be inline (no newlines) */
+            int child_is_inline = is_inline_element(node->tag);
+
+            /* write content if present */
+            if (node->content) {
+                char* escaped_content = escape_html(node->content);
+                fprintf(file, "%s", escaped_content ? escaped_content : node->content);
+                free(escaped_content);
+            }
+
+            /* write children with proper indentation */
+            if (node->children) {
+                if (!child_is_inline) fprintf(file, "\n");
+                write_pretty_node(file, node->children, indent_level + 1,
+                    child_is_inline);
+
+                if (!child_is_inline && indent)
+                    fprintf(file, "%s", indent);
+            }
+
+            fprintf(file, "</%s>\n", node->tag);
+        }
+    }
+    else {
+        /* text node */
+        if (node->content) {
+            if (!is_inline && indent) {
+                fprintf(file, "%s", indent);
+            }
+
+            char* escaped_content = escape_html(node->content);
+
+            /* preserve significant whitespace in text nodes */
+            if (escaped_content) {
+                /* check if this is mostly whitespace */
+                int all_whitespace = 1;
+
+                for (char* p = escaped_content; *p; p++) {
+                    if (!isspace(*p)) {
+                        all_whitespace = 0;
+                        break;
+                    }
+                }
+
+                if (!all_whitespace) {
+                    fprintf(file, "%s", escaped_content);
+                    if (!is_inline) fprintf(file, "\n");
+                }
+                else if (!is_inline)
+                    fprintf(file, "\n");
+            }
+
+            free(escaped_content);
+        }
+    }
+
+    free(indent);
+
+    /* write siblings */
+    if (node->next)
+        write_pretty_node(file, node->next, indent_level, is_inline);
+}
+
 /* Alternative function that returns prettified HTML as string. */
 char* html2tex_get_pretty_html(HTMLNode* root) {
     if (!root) return NULL;

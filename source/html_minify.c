@@ -32,3 +32,43 @@ static int is_whitespace_only(const char* text) {
 
     return 1;
 }
+
+/* Remove the unnecessary whitespace from text content. */
+static char* minify_text_content(const char* text, int is_in_preformatted) {
+    if (!text || is_in_preformatted)
+        return text ? strdup(text) : NULL;
+
+    /* for normal text, collapse multiple whitespace into single space */
+    char* result = malloc(strlen(text) + 1);
+    if (!result) return NULL;
+
+    char* dest = result;
+    int in_whitespace = 0;
+
+    for (const char* src = text; *src; src++) {
+        if (isspace(*src)) {
+            if (!in_whitespace && dest != result) {
+                *dest++ = ' ';
+                in_whitespace = 1;
+            }
+        }
+        else {
+            *dest++ = *src;
+            in_whitespace = 0;
+        }
+    }
+
+    *dest = '\0';
+
+    /* trim leading/trailing whitespace */
+    if (dest > result && isspace(*(dest - 1)))
+        *(dest - 1) = '\0';
+
+    /* if result is empty after trimming, return NULL */
+    if (result[0] == '\0') {
+        free(result);
+        return NULL;
+    }
+
+    return result;
+}

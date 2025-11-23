@@ -125,6 +125,7 @@ extern "C" {
 
     /* utility functions */
     HTMLNode* html2tex_parse(const char* html);
+	HTMLNode* html2tex_parse_minified(const char* html);
     void html2tex_free_node(HTMLNode* node);
 	
 	/* CSS parsing functions */
@@ -135,7 +136,8 @@ extern "C" {
 	void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
 	void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
 
-	/* HTML prettifying functions */
+	/* HTML auxilliary functions */
+	HTMLNode* html2tex_minify_html(HTMLNode* root);
 	int write_pretty_html(HTMLNode* root, const char* filename);
 	char* get_pretty_html(HTMLNode* root);
 

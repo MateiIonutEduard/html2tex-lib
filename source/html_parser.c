@@ -250,6 +250,7 @@ static HTMLNode* parse_element(ParserState* state) {
     return node;
 }
 
+/* Parse the virtual DOM tree without optimizations. */
 HTMLNode* html2tex_parse(const char* html) {
     if (!html) return NULL;
     ParserState state;
@@ -288,6 +289,21 @@ HTMLNode* html2tex_parse(const char* html) {
     }
 
     return root;
+}
+
+/* Parse the virtual DOM tree with minification for improved performance. */
+HTMLNode* html2tex_parse_minified(const char* html) {
+    if (!html) return NULL;
+
+    /* first parse normally */
+    HTMLNode* parsed = html2tex_parse(html);
+    if (!parsed) return NULL;
+
+    /* then minify */
+    HTMLNode* minified = html2tex_minify_html(parsed);
+
+    html2tex_free_node(parsed);
+    return minified;
 }
 
 void html2tex_free_node(HTMLNode* node) {

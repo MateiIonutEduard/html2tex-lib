@@ -40,6 +40,8 @@ extern "C" {
         int in_list;
 		
         int table_counter;
+		int table_id_counter;
+		
 		int image_id_counter;
 		int image_caption_counter;
 		

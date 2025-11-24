@@ -17,6 +17,7 @@ LaTeXConverter* html2tex_create(void) {
 
     converter->state.in_list = 0;
     converter->state.table_counter = 0;
+    converter->state.table_id_counter = 0;
 
     converter->state.image_id_counter = 0;
     converter->state.image_caption_counter = 0;

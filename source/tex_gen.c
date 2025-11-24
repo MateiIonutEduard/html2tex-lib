@@ -233,7 +233,7 @@ static void begin_table(LaTeXConverter* converter, int columns) {
     append_string(converter, "}\n\\hline\n");
 }
 
-static void end_table(LaTeXConverter* converter) {
+static void end_table(LaTeXConverter* converter, const char* table_label) {
     if (converter->state.in_table) {
         append_string(converter, "\\end{tabular}\n");
 
@@ -255,6 +255,12 @@ static void end_table(LaTeXConverter* converter) {
             snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
 
             append_string(converter, counter_str);
+            append_string(converter, "}\n");
+        }
+
+        if (table_label) {
+            append_string(converter, "\\label{tab:");
+            escape_latex_special(converter, table_label);
             append_string(converter, "}\n");
         }
 
@@ -597,7 +603,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
         if (src) {
             /* start figure environment */
-            append_string(converter, "\n\\begin{figure}[h]\n");
+            append_string(converter, "\n\n\\begin{figure}[h]\n");
 
             /* default centering */
             append_string(converter, "\\centering\n");
@@ -655,12 +661,10 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             else {
                 /* automatic caption generation using the image caption counter */
                 converter->state.image_caption_counter++;
-                append_string(converter, "\n");
-
                 append_string(converter, "\\caption{");
                 char text_caption[16];
 
-                char caption_counter[11];
+                char caption_counter[10];
                 itoa(converter->state.image_caption_counter, caption_counter, 10);
 
                 strcpy(text_caption, "Image ");
@@ -672,7 +676,6 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
             /* add figure label if the image id attribute is present */
             if (image_id_attr && image_id_attr[0] != '\0') {
-                append_string(converter, "\n");
                 append_string(converter, "\\label{fig:");
 
                 escape_latex(converter, image_id_attr);
@@ -681,12 +684,10 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             else {
                 /* automatic ID generation using the image id counter */
                 converter->state.image_id_counter++;
-                append_string(converter, "\n");
-
                 append_string(converter, "\\label{fig:");
                 char image_label_id[16];
 
-                char label_counter[11];
+                char label_counter[10];
                 itoa(converter->state.image_id_counter, label_counter, 10);
 
                 strcpy(image_label_id, "image_");
@@ -698,7 +699,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
             /* end figure environment */
             append_string(converter, "\\end{figure}\n");
-            append_string(converter, "\\FloatBarrier\n");
+            append_string(converter, "\\FloatBarrier\n\n");
         }
     }
     /* table support */
@@ -717,8 +718,23 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             child = child->next;
         }
 
+        const char* table_id = get_attribute(node->attributes, "id");
+
         /* reset CSS state after table */
-        end_table(converter);
+        if (table_id && table_id[0] != '\0')
+            end_table(converter, table_id);
+        else {
+            converter->state.table_id_counter++;
+            char table_label[16];
+
+            char label_counter[10];
+            itoa(converter->state.table_id_counter, label_counter, 10);
+
+            strcpy(table_label, "table_");
+            strcpy(table_label + 6, label_counter);
+            end_table(converter, table_label);
+        }
+
         reset_css_state(converter);
     }
     // added explicit caption handling
@@ -788,6 +804,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
                         converter->state.table_caption = formatted_caption;
                     }
+
                     free_css_properties(css_props);
                 }
                 else

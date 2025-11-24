@@ -135,6 +135,13 @@ extern "C" {
 	HTMLNode* html2tex_parse_minified(const char* html);
     void html2tex_free_node(HTMLNode* node);
 	
+	/* image download functions */
+	char* download_image_src(const char* src, const char* output_dir, int image_counter);
+	int is_base64_image(const char* src);
+	
+	int image_utils_init(void);
+	void image_utils_cleanup(void);
+	
 	/* CSS parsing functions */
 	CSSProperties* parse_css_style(const char* style_str);
 	void free_css_properties(CSSProperties* props);

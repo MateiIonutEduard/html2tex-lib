@@ -49,6 +49,28 @@ static char* get_attribute(HTMLAttribute* attrs, const char* key) {
     return NULL;
 }
 
+static void escape_latex_special(LaTeXConverter* converter, const char* text)
+{
+    if (!text) return;
+
+    for (const char* p = text; *p; p++) {
+        switch (*p) {
+        case '{': append_string(converter, "\\{"); break;
+        case '}': append_string(converter, "\\}"); break;
+        case '&': append_string(converter, "\\&"); break;
+        case '%': append_string(converter, "\\%"); break;
+        case '$': append_string(converter, "\\$"); break;
+        case '#': append_string(converter, "\\#"); break;
+        case '^': append_string(converter, "\\^{}"); break;
+        case '~': append_string(converter, "\\~{}"); break;
+        case '<': append_string(converter, "\\textless{}"); break;
+        case '>': append_string(converter, "\\textgreater{}"); break;
+        case '\n': append_string(converter, "\\\\"); break;
+        default: append_char(converter, *p); break;
+        }
+    }
+}
+
 static void escape_latex(LaTeXConverter* converter, const char* text) {
     if (!text) return;
 
@@ -210,7 +232,7 @@ static void begin_table(LaTeXConverter* converter, int columns) {
     append_string(converter, "}\n\\hline\n");
 }
 
-static void end_table(LaTeXConverter* converter) {
+static void end_table(LaTeXConverter* converter, const char* table_label) {
     if (converter->state.in_table) {
         append_string(converter, "\\end{tabular}\n");
 
@@ -232,6 +254,12 @@ static void end_table(LaTeXConverter* converter) {
             snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
 
             append_string(converter, counter_str);
+            append_string(converter, "}\n");
+        }
+
+        if (table_label) {
+            append_string(converter, "\\label{tab:");
+            escape_latex_special(converter, table_label);
             append_string(converter, "}\n");
         }
 
@@ -390,6 +418,29 @@ static char* extract_caption_text(HTMLNode* node) {
     return buffer;
 }
 
+/* Helper function to check if a tag should be excluded from conversion. */
+static int should_exclude_tag(const char* tag_name) {
+    if (!tag_name) return 0;
+
+    const char* excluded_tags[] = {
+        "script", "style", "link", "meta", "head",
+        "noscript", "template", "iframe", "form",
+        "input", "label", "canvas", "svg", "video",
+        "source", "audio", "object", "button", "map",
+        "area", "frame", "frameset", "noframes", "nav",
+        "picture", "progress", "select", "option", "param",
+        "search", "samp", "track", "var", "wbr", "mark",
+        "meter", "optgroup", "q", "blockquote", "bdo", NULL
+    };
+
+    for (int i = 0; excluded_tags[i]; i++) {
+        if (strcmp(tag_name, excluded_tags[i]) == 0)
+            return 1;
+    }
+
+    return 0;
+}
+
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return;
 
@@ -400,6 +451,10 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     }
 
     if (!node->tag) return;
+
+    /* skip excluded elements and all their child elements completely */
+    if (node->tag && should_exclude_tag(node->tag))
+        return;
 
     // CSS properties parsing and application
     CSSProperties* css_props = NULL;
@@ -536,6 +591,142 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         append_string(converter, "\\hrulefill\n\n");
     else if (strcmp(node->tag, "div") == 0)
         convert_children(converter, node);
+    /* image support */
+    else if (strcmp(node->tag, "img") == 0) {
+        converter->image_counter++;
+        char* src = get_attribute(node->attributes, "src");
+
+        char* alt = get_attribute(node->attributes, "alt");
+        char* width_attr = get_attribute(node->attributes, "width");
+
+        char* height_attr = get_attribute(node->attributes, "height");
+        char* image_id_attr = get_attribute(node->attributes, "id");
+
+        if (src) {
+            char* image_path = NULL;
+
+            /* download image if enabled and we have a directory */
+            if (converter->download_images && converter->image_output_dir)
+                image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+
+            /* if download failed or not enabled, use original src */
+            if (!image_path) {
+                /* force download for base64 images */
+                if (is_base64_image(src) && converter->download_images && converter->image_output_dir)
+                    image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+
+                /* use original source path */
+                if (!image_path) image_path = strdup(src);
+            }
+
+            /* start figure environment */
+            append_string(converter, "\n\n\\begin{figure}[h]\n");
+
+            /* default centering */
+            append_string(converter, "\\centering\n");
+
+            /* parse CSS style for width, height overrides */
+            int width_pt = 0;
+            int height_pt = 0;
+
+            /* check if CSS style overrides width/height */
+            if (css_props) {
+                if (css_props->width) width_pt = css_length_to_pt(css_props->width);
+                if (css_props->height) height_pt = css_length_to_pt(css_props->height);
+            }
+
+            /* fall back to attribute values if CSS didn't provide dimensions */
+            if (width_pt == 0 && width_attr) width_pt = css_length_to_pt(width_attr);
+            if (height_pt == 0 && height_attr) height_pt = css_length_to_pt(height_attr);
+
+            /* escape the image path for LaTeX */
+            append_string(converter, "\\includegraphics");
+
+            /* add width/height options if specified */
+            if (width_pt > 0 || height_pt > 0) {
+                append_string(converter, "[");
+
+                if (width_pt > 0) {
+                    char width_str[32];
+                    snprintf(width_str, sizeof(width_str), "width=%dpt", width_pt);
+                    append_string(converter, width_str);
+                }
+
+                if (height_pt > 0) {
+                    if (width_pt > 0) append_string(converter, ",");
+                    char height_str[32];
+
+                    snprintf(height_str, sizeof(height_str), "height=%dpt", height_pt);
+                    append_string(converter, height_str);
+                }
+
+                append_string(converter, "]");
+            }
+
+            append_string(converter, "{");
+
+            /* use directory/filename format for downloaded images */
+            if (converter->download_images && converter->image_output_dir 
+                && strstr(image_path, converter->image_output_dir) == image_path)
+                escape_latex_special(converter, image_path + 2);
+            else
+                /* use original path */
+                escape_latex(converter, image_path);
+
+            append_string(converter, "}\n");
+
+            /* add caption if alt text is present */
+            if (alt && alt[0] != '\0') {
+                append_string(converter, "\n");
+                append_string(converter, "\\caption{");
+
+                escape_latex(converter, alt);
+                append_string(converter, "}\n");
+            }
+            else {
+                /* automatic caption generation using the image caption counter */
+                converter->state.image_caption_counter++;
+                append_string(converter, "\\caption{");
+                char text_caption[16];
+
+                char caption_counter[10];
+                itoa(converter->state.image_caption_counter, caption_counter, 10);
+
+                strcpy(text_caption, "Image ");
+                strcpy(text_caption + 6, caption_counter);
+
+                escape_latex(converter, text_caption);
+                append_string(converter, "}\n");
+            }
+
+            /* add figure label if the image id attribute is present */
+            if (image_id_attr && image_id_attr[0] != '\0') {
+                append_string(converter, "\\label{fig:");
+
+                escape_latex(converter, image_id_attr);
+                append_string(converter, "}\n");
+            }
+            else {
+                /* automatic ID generation using the image id counter */
+                converter->state.image_id_counter++;
+                append_string(converter, "\\label{fig:");
+                char image_label_id[16];
+
+                char label_counter[10];
+                itoa(converter->state.image_id_counter, label_counter, 10);
+
+                strcpy(image_label_id, "image_");
+                strcpy(image_label_id + 6, label_counter);
+
+                escape_latex_special(converter, image_label_id);
+                append_string(converter, "}\n");
+            }
+
+            /* end figure environment */
+            append_string(converter, "\\end{figure}\n");
+            append_string(converter, "\\FloatBarrier\n\n");
+        }
+    }
     /* table support */
     else if (strcmp(node->tag, "table") == 0) {
         /* reset CSS state before table */
@@ -552,8 +743,23 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             child = child->next;
         }
 
+        const char* table_id = get_attribute(node->attributes, "id");
+
         /* reset CSS state after table */
-        end_table(converter);
+        if (table_id && table_id[0] != '\0')
+            end_table(converter, table_id);
+        else {
+            converter->state.table_id_counter++;
+            char table_label[16];
+
+            char label_counter[10];
+            itoa(converter->state.table_id_counter, label_counter, 10);
+
+            strcpy(table_label, "table_");
+            strcpy(table_label + 6, label_counter);
+            end_table(converter, table_label);
+        }
+
         reset_css_state(converter);
     }
     // added explicit caption handling
@@ -623,6 +829,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
                         converter->state.table_caption = formatted_caption;
                     }
+
                     free_css_properties(css_props);
                 }
                 else
@@ -717,7 +924,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             /* empty cell for colspan */
             append_string(converter, " ");
         }
-        }
+    }
     else {
         /* unknown tag, just convert children */
         convert_children(converter, node);

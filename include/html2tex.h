@@ -40,12 +40,17 @@ extern "C" {
         int in_list;
 		
         int table_counter;
+		int table_id_counter;
+		
+		int image_id_counter;
+		int image_caption_counter;
+		
         int in_table;
-		
         int in_table_row;
-        int in_table_cell;
 		
+        int in_table_cell;
         int table_columns;
+		
         int current_column;
 		char* table_caption;
 		
@@ -58,8 +63,10 @@ extern "C" {
         /* track applied CSS properties */
         int has_bold;
         int has_italic;
+		
         int has_underline;
         int has_color;
+		
         int has_background;
         int has_font_family;
     };
@@ -110,6 +117,10 @@ extern "C" {
 		
         int error_code;
         char error_message[256];
+		
+		char* image_output_dir;
+        int download_images;
+		int image_counter;
     };
 
     /* core API functions */
@@ -127,6 +138,17 @@ extern "C" {
     HTMLNode* html2tex_parse(const char* html);
 	HTMLNode* html2tex_parse_minified(const char* html);
     void html2tex_free_node(HTMLNode* node);
+	
+	/* image configuration functions */
+    void html2tex_set_image_directory(LaTeXConverter* converter, const char* dir);
+    void html2tex_set_download_images(LaTeXConverter* converter, int enable);
+	
+	/* image download functions */
+	char* download_image_src(const char* src, const char* output_dir, int image_counter);
+	int is_base64_image(const char* src);
+	
+	int image_utils_init(void);
+	void image_utils_cleanup(void);
 	
 	/* CSS parsing functions */
 	CSSProperties* parse_css_style(const char* style_str);

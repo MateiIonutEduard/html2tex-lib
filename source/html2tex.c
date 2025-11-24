@@ -17,6 +17,10 @@ LaTeXConverter* html2tex_create(void) {
 
     converter->state.in_list = 0;
     converter->state.table_counter = 0;
+    converter->state.table_id_counter = 0;
+
+    converter->state.image_id_counter = 0;
+    converter->state.image_caption_counter = 0;
 
     converter->state.in_table = 0;
     converter->state.in_table_row = 0;
@@ -43,13 +47,39 @@ LaTeXConverter* html2tex_create(void) {
     converter->state.has_font_family = 0;
     converter->error_code = 0;
 
+    /* initialize image configuration */
+    converter->image_output_dir = NULL;
+    converter->download_images = 0;
+    converter->image_counter = 0;
+
     converter->error_message[0] = '\0';
     return converter;
+}
+
+void html2tex_set_image_directory(LaTeXConverter* converter, const char* dir) {
+    if (!converter) return;
+
+    /* free existing directory if set */
+    if (converter->image_output_dir) {
+        free(converter->image_output_dir);
+        converter->image_output_dir = NULL;
+    }
+
+    if (dir && dir[0] != '\0')
+        converter->image_output_dir = strdup(dir);
+}
+
+void html2tex_set_download_images(LaTeXConverter* converter, int enable) {
+    if (converter)
+        converter->download_images = enable ? 1 : 0;
 }
 
 char* html2tex_convert(LaTeXConverter* converter, const char* html) {
     if (!converter || !html)
         return NULL;
+
+    /* initialize image utilities if downloading is enabled */
+    if (converter->download_images) image_utils_init();
 
     /* reset converter state */
     if (converter->output) {
@@ -80,6 +110,9 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
     append_string(converter, "\\usepackage[table]{xcolor}\n");
 
     append_string(converter, "\\usepackage{tabularx}\n");
+    append_string(converter, "\\usepackage{graphicx}\n");
+
+    append_string(converter, "\\usepackage{placeins}\n");
     append_string(converter, "\\begin{document}\n\n");
 
     /* parse HTML and convert */
@@ -97,6 +130,9 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
 
     /* add document ending */
     append_string(converter, "\n\\end{document}\n");
+
+    /* cleanup image utilities if they were initialized */
+    if (converter->download_images) image_utils_cleanup();
 
     /* return a copy of the output */
     char* result = malloc(converter->output_size + 1);
@@ -118,6 +154,10 @@ void html2tex_destroy(LaTeXConverter* converter) {
     /* free table caption if it exists */
     if (converter->state.table_caption)
         free(converter->state.table_caption);
+
+    /* free image directory */
+    if (converter->image_output_dir)
+        free(converter->image_output_dir);
 
     if (converter->output)
         free(converter->output);

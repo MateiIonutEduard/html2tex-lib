@@ -40,7 +40,7 @@ int HtmlTeXConverter::getErrorCode() const {
 }
 
 string HtmlTeXConverter::getErrorMessage() const {
-    if (!converter) return "Converter not initialized";
+    if (!converter) return "Converter not initialized.";
     return html2tex_get_error_message(converter);
 }
 

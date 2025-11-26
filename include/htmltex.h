@@ -57,9 +57,13 @@ public:
     */
     bool setDirectory(const string&);
 
-    /* check for errors */
+    /* Check for errors during conversion. */
     bool hasError() const;
+
+    /* Return the conversion error code. */
     int getErrorCode() const;
+
+    /* Return the conversion error message. */
     string getErrorMessage() const;
 
     /* delete copy constructor and assignment operator to prevent copying */

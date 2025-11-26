@@ -74,59 +74,26 @@ string HtmlParser::toString() {
     return "";
 }
 
-HTMLNode* HtmlParser::dom_tree_copy(const HTMLNode* node) {
-    return dom_tree_copy(node, NULL);
-}
-
-HTMLNode* HtmlParser::dom_tree_copy(const HTMLNode* node, HTMLNode* parent) {
+HTMLNode* HtmlParser::dom_tree_copy(HTMLNode* node) {
     if (!node) return NULL;
 
-    /* allocate new node */
     HTMLNode* new_node = (HTMLNode*)malloc(sizeof(HTMLNode));
     if (!new_node) return NULL;
 
-    /* initialize all fields */
-    new_node->tag = NULL;
-    new_node->content = NULL;
-
-    new_node->attributes = NULL;
-    new_node->children = NULL;
+    new_node->tag = node->tag ? strdup(node->tag) : NULL;
+    new_node->content = node->content ? strdup(node->content) : NULL;
+    new_node->parent = NULL;
 
     new_node->next = NULL;
-    new_node->parent = parent;
+    new_node->children = NULL;
 
-    /* deep copy tag string */
-    if (node->tag) {
-        size_t tag_len = strlen(node->tag);
-        new_node->tag = (char*)malloc(tag_len + 1);
+    /* copy attributes */
+    HTMLAttribute* new_attrs = NULL;
 
-        if (!new_node->tag) {
-            free(new_node);
-            return NULL;
-        }
+    HTMLAttribute** current_attr = &new_attrs;
+    HTMLAttribute* old_attr = node->attributes;
 
-        strcpy(new_node->tag, node->tag);
-    }
-
-    /* deep copy content string */
-    if (node->content) {
-        size_t content_len = strlen(node->content);
-        new_node->content = (char*)malloc(content_len + 1);
-
-        if (!new_node->content) {
-            if (new_node->tag) free(new_node->tag);
-            free(new_node);
-            return NULL;
-        }
-
-        strcpy(new_node->content, node->content);
-    }
-
-    /* deep copy attributes linked list */
-    HTMLAttribute* orig_attr = node->attributes;
-    HTMLAttribute** current_attr = &new_node->attributes;
-
-    while (orig_attr) {
+    while (old_attr) {
         HTMLAttribute* new_attr = (HTMLAttribute*)malloc(sizeof(HTMLAttribute));
 
         if (!new_attr) {
@@ -134,64 +101,38 @@ HTMLNode* HtmlParser::dom_tree_copy(const HTMLNode* node, HTMLNode* parent) {
             return NULL;
         }
 
-        new_attr->key = NULL;
-        new_attr->value = NULL;
+        new_attr->key = strdup(old_attr->key);
+        new_attr->value = old_attr->value ? strdup(old_attr->value) : NULL;
+
         new_attr->next = NULL;
-
-        /* deep copy key string */
-        if (orig_attr->key) {
-            size_t key_len = strlen(orig_attr->key);
-            new_attr->key = (char*)malloc(key_len + 1);
-
-            if (!new_attr->key) {
-                free(new_attr);
-                html2tex_free_node(new_node);
-                return NULL;
-            }
-
-            strcpy(new_attr->key, orig_attr->key);
-        }
-
-        /* deep copy value string if exists */
-        if (orig_attr->value) {
-            size_t value_len = strlen(orig_attr->value);
-            new_attr->value = (char*)malloc(value_len + 1);
-
-            if (!new_attr->value) {
-                if (new_attr->key) free(new_attr->key);
-                free(new_attr);
-
-                html2tex_free_node(new_node);
-                return NULL;
-            }
-
-            strcpy(new_attr->value, orig_attr->value);
-        }
-
-        /* link into attribute list */
         *current_attr = new_attr;
+
         current_attr = &new_attr->next;
-        orig_attr = orig_attr->next;
+        old_attr = old_attr->next;
     }
 
-    /* deep copy children linked list recursively */
-    HTMLNode* orig_child = node->children;
-    HTMLNode** current_child = &new_node->children;
+    /* recursively copy children */
+    new_node->attributes = new_attrs;
+    HTMLNode* new_children = NULL;
 
-    while (orig_child) {
-        HTMLNode* new_child = dom_tree_copy(orig_child, new_node);
-        if (!new_child) {
+    HTMLNode** current_child = &new_children;
+    HTMLNode* old_child = node->children;
+
+    while (old_child) {
+        HTMLNode* copied_child = dom_tree_copy(old_child);
+        if (!copied_child) {
             html2tex_free_node(new_node);
             return NULL;
         }
 
-        /* link into children list */
-        *current_child = new_child;
+        copied_child->parent = new_node;
+        *current_child = copied_child;
 
-        current_child = &new_child->next;
-        orig_child = orig_child->next;
+        current_child = &copied_child->next;
+        old_child = old_child->next;
     }
 
+    new_node->children = new_children;
     return new_node;
 }
 

@@ -1,5 +1,5 @@
-#include "html_parser.h"
 #include "html2tex.h"
+#include "htmltex.h"
 #include <stdlib.h>
 #include <string>
 #include <iostream>
@@ -12,6 +12,10 @@ HtmlParser::HtmlParser(const string& html) : HtmlParser(html, false)
 HtmlParser::HtmlParser(const string& html, bool minify) {
 	node = minify ? html2tex_parse_minified(html.c_str()) 
         : html2tex_parse(html.c_str());
+}
+
+HtmlParser::HtmlParser(HTMLNode* node) {
+    node = dom_tree_copy(node);
 }
 
 HtmlParser::HtmlParser(const HtmlParser& parser) {

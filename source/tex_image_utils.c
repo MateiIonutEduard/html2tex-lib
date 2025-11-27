@@ -50,7 +50,6 @@ static const unsigned char base64_table[256] = {
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80
 };
 
-/* Check if string is base64 encoded image */
 int is_base64_image(const char* src) {
     if (!src) return 0;
     return (strncmp(src, "data:image/", 11) == 0);
@@ -416,7 +415,6 @@ static char* generate_unique_filename(const char* base_filename, const char* src
     return unique_name;
 }
 
-/* Main function to download image from src both URLs and base64 strings. */
 char* download_image_src(const char* src, const char* output_dir, int image_counter) {
     if (!src || !output_dir) return NULL;
 
@@ -455,13 +453,11 @@ char* download_image_src(const char* src, const char* output_dir, int image_coun
     }
 }
 
-/* Initialize libcurl stuff. */
 int image_utils_init(void) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     return 0;
 }
 
-/* Cleanup libcurl stuff. */
 void image_utils_cleanup(void) {
     curl_global_cleanup();
 }

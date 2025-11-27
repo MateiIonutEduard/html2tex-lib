@@ -146,15 +146,22 @@ extern "C" {
 	/* Frees the memory for the HTMLNode* instance. */
     void html2tex_free_node(HTMLNode* node);
 	
-	/* image configuration functions */
+	/* Sets the download output directory. */
     void html2tex_set_image_directory(LaTeXConverter* converter, const char* dir);
+	
+	/* Toggles image downloading according to the enable flag. */
     void html2tex_set_download_images(LaTeXConverter* converter, int enable);
 	
-	/* image download functions */
+	/* Downloads an image from the specified URL. */
 	char* download_image_src(const char* src, const char* output_dir, int image_counter);
+	
+	/* Returns whether src contains a base64-encoded image. */
 	int is_base64_image(const char* src);
 	
+	/* Initializes download processing. */
 	int image_utils_init(void);
+	
+	/* Frees image-download resources. */
 	void image_utils_cleanup(void);
 	
 	/* CSS parsing functions */

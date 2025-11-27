@@ -164,12 +164,16 @@ extern "C" {
 	/* Frees image-download resources. */
 	void image_utils_cleanup(void);
 	
-	/* CSS parsing functions */
+	/* Parses inline CSS from style. */
 	CSSProperties* parse_css_style(const char* style_str);
+	
+	/* Releases memory used by CSSProperties for managing styles. */
 	void free_css_properties(CSSProperties* props);
 
-	/* CSS to LaTeX conversion functions */
+	/* Applies inline CSS to the specified HTML element. */
 	void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
+	
+	/* Finalizes inline CSS and frees resources. */
 	void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name);
 
 	/* HTML auxilliary functions */
@@ -177,12 +181,19 @@ extern "C" {
 	int write_pretty_html(HTMLNode* root, const char* filename);
 	char* get_pretty_html(HTMLNode* root);
 
-	/* utility functions */
+	/* Converts a CSS length to LaTeX points. */
 	int css_length_to_pt(const char* length_str);
+	
+	/* Converts a CSS color to hexadecimal format. */
 	char* css_color_to_hex(const char* color_value);
 	
+	/* Checks if an element is block-level. */
 	int is_block_element(const char* tag_name);
+	
+	/* Checks if an element is inline. */
 	int is_inline_element(const char* tag_name);
+	
+	/* Resets the CSS style engine state for the virtual DOM. */
 	void reset_css_state(LaTeXConverter* converter);
 
 #ifdef __cplusplus

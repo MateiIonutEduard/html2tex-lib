@@ -349,9 +349,9 @@ static char* generate_safe_filename(const char* src, int image_counter) {
     return filename;
 }
 
-/* Generate the hash corresponding to the filename. */
+/* Generates a filename hash using the modified djb2 function. */
 static void gen_hash(const char* input, char* output) {
-    /* simple hash function for generating unique filenames */
+    /* use timestamp to randomize */
     unsigned long hash = 5381 ^ (unsigned long)time(NULL);
     int c;
 

@@ -29,6 +29,7 @@
 
 #include <curl/curl.h>
 #include "html2tex.h"
+#include <time.h>
 
 /* Base64 decoding table */
 static const unsigned char base64_table[256] = {
@@ -349,9 +350,9 @@ static char* generate_safe_filename(const char* src, int image_counter) {
 }
 
 /* Generate the hash corresponding to the filename. */
-static void generate_md5_hash(const char* input, char* output) {
+static void gen_hash(const char* input, char* output) {
     /* simple hash function for generating unique filenames */
-    unsigned long hash = 5381;
+    unsigned long hash = 5381 ^ (unsigned long)time(NULL);
     int c;
 
     while ((c = *input++)) hash = ((hash << 5) + hash) + c;
@@ -381,7 +382,7 @@ static char* generate_unique_filename(const char* base_filename, const char* src
     free(filename);
 
     char hash[33];
-    generate_md5_hash(src, hash);
+    gen_hash(src, hash);
 
     char* unique_name = malloc(256);
     if (!unique_name) return NULL;

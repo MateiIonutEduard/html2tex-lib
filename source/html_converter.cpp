@@ -25,6 +25,8 @@ string HtmlTeXConverter::convert(const string& html) {
     if (result) {
         string latex(result);
         free(result);
+
+        html2tex_reset(converter);
         return latex;
     }
 

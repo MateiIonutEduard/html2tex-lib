@@ -126,6 +126,9 @@ extern "C" {
     /* Creates a new LaTeXConverter* and allocates memory. */
     LaTeXConverter* html2tex_create(void);
 	
+	/* Resets the HTML-to-LaTeX converter state. */
+	int html2tex_reset(LaTeXConverter* converter);
+	
 	/* Frees a LaTeXConverter* structure. */
     void html2tex_destroy(LaTeXConverter* converter);
     

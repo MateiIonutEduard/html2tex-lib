@@ -20,12 +20,17 @@ HtmlParser::HtmlParser(const string& html, int minify) {
     this->minify = minify;
 }
 
-HtmlParser::HtmlParser(HTMLNode* node) {
+HtmlParser::HtmlParser(HTMLNode* node) : HtmlParser(node, 0)
+{  }
+
+HtmlParser::HtmlParser(HTMLNode* node, int minify) {
     node = dom_tree_copy(node);
+    this->minify = minify;
 }
 
 HtmlParser::HtmlParser(const HtmlParser& parser) {
     node = dom_tree_copy(parser.node);
+    minify = parser.minify;
 }
 
 HtmlParser& HtmlParser::operator=(const HtmlParser& parser)

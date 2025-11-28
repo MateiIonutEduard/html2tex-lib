@@ -62,17 +62,62 @@ Outputs are generated in:
 
 ```c
 #include "html2tex.h"
-int main() {
-  LaTeXConverter* converter = html2tex_create();
-  char* latex = html2tex_convert(converter, "<p>This is <b>bold</b> text</p>");
-  
-  if (latex) {
-      printf("%s\n", latex);
-      free(latex);
-  }
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-  html2tex_destroy(converter);
-  return 0;
+char* read_file(const char* filename) {
+    FILE* file = fopen(filename, "r");
+
+    if (!file) {
+        fprintf(stderr, "Error: Cannot open file %s.\n", filename);
+        return NULL;
+    }
+
+    /* get file size */
+    fseek(file, 0, SEEK_END);
+
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    /* allocate memory */
+    char* content = malloc(file_size + 1);
+
+    if (!content) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        fclose(file);
+        return NULL;
+    }
+
+    /* read file content */
+    size_t bytes_read = fread(content, 1, file_size, file);
+    content[bytes_read] = '\0';
+
+    fclose(file);
+    return content;
+}
+
+int main(int argc, char** argv) {
+   /* check command line arguments */
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <html_file_path> <output_image_directory>\n", argv[0]);
+        return 1;
+    }
+
+    LaTeXConverter* converter = html2tex_create();
+    html2tex_set_image_directory(converter, argv[2]);
+
+    html2tex_set_download_images(converter, 1);
+    char* html_data = GetHTML(argv[1]);
+    char* latex = html2tex_convert(converter, html_data);
+
+    if (latex) {
+        printf("\"%s\"\n", latex);
+        free(latex);
+    }
+
+    html2tex_destroy(converter);
+    return 0;
 }
 ```
 
@@ -80,12 +125,19 @@ int main() {
 
 ```cpp
 #include "htmltex.h"
+#include <iostream>
 #include <fstream>
 #include <sstream>
 using namespace std;
 
-int main() {
-	ifstream in("test.html");
+int main(int argc, char** argv) {
+    /* check command line arguments */
+    if (argc != 3) {
+        cerr << "Usage: " << argv[0] << " <html_file_path> <output_image_directory>" << endl;
+        return 1;
+    }
+
+	ifstream in(argv[1]);
 	ostringstream stream;
 	stream << in.rdbuf();
 
@@ -93,7 +145,7 @@ int main() {
 	in.close();
 
 	HtmlTeXConverter util;
-	util.setDirectory("./images");
+	util.setDirectory(argv[2]);
 
 	string latex = util.convert(str);
 	cout << latex << endl;

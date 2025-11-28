@@ -1,6 +1,6 @@
 # html2tex
 
-**Lightning-fast HTML → LaTeX conversion in pure C & modern C++**
+**Lightning-fast HTML → LaTeX conversion in pure C & modern C++**<br/>
 Static, cross-platform, dependency-light libraries for fast document transformation.
 
 [![C99](https://img.shields.io/badge/C-99-blue.svg)](https://en.wikipedia.org/wiki/C99)
@@ -170,11 +170,6 @@ html2tex/
 │   ├── tex_image_utils.c
 │   ├── html_converter.cpp
 │   └── html_parser.cpp
-├── examples/
-│   ├── example_1.html
-│   ├── example_2.html
-│   ├── example_3.html
-│   ├── example_4.html
 ├── cmake/
 │   └── html2texConfig.cmake.in
 ├── LICENSE

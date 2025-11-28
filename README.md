@@ -79,15 +79,25 @@ int main() {
 ### C++ API (`html2tex_cpp`)
 
 ```cpp
-#include "HtmlToLatexConverter.h"
+#include "htmltex.h"
+#include <fstream>
+#include <sstream>
 using namespace std;
 
 int main() {
-  HtmlToLatexConverter converter;
-  string latex = converter.convert("<p>This is <b>bold</b> text</p>");
+	ifstream in("test.html");
+	ostringstream stream;
+	stream << in.rdbuf();
 
-  cout << latex << endl;
-  return 0;
+	string str = stream.str();
+	in.close();
+
+	HtmlTeXConverter util;
+	util.setDirectory("./images");
+
+	string latex = util.convert(str);
+	cout << latex << endl;
+	return 0;
 }
 ```
 

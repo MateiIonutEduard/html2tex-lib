@@ -213,7 +213,7 @@ cmake --install . --prefix "C:\Libraries\html2tex"
 ```
 
 ## 🎯 Why html2tex?
-* 🔄 Zero Dependencies - Pure C/C++, no external libs
+* 🔄 Lightweight Dependencies - Pure C/C++ core, uses libcurl for image downloads
 * ⚡ High Performance - Optimized parsing and conversion
 * 🎯 Cross-Platform - Consistent behavior everywhere
 * 🔧 Dual Interface - C API + modern C++14 wrapper
@@ -221,7 +221,7 @@ cmake --install . --prefix "C:\Libraries\html2tex"
 
 ## 🛡️ Compatibility Notes
 
-- ✅ **Full HTML5 Support** - Complete coverage for listed elements
+- ✅ **Rich HTML5 & CSS 2.1** - Parses a substantial subset of elements and core properties
 - 🔒 **Automatic Escaping** - Intelligent LaTeX character handling  
 - 🏗️ **Nested Element Support** - Robust scope management
 - 🌐 **Cross-Platform Consistency** - Identical behavior everywhere

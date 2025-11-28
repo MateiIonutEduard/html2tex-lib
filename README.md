@@ -48,11 +48,17 @@ Features:
 git clone https://github.com/MateiIonutEduard/html2tex.git && cd html2tex
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release --parallel
+cmake --build . --parallel --config Release
 ```
 
-## 💻 Usage
-### C API
+Outputs are generated in:
+
+```bash
+/bin/<Debug|Release>/<x64|x86>/
+```
+
+## 💻 Usage Examples
+### C API (`html2tex_c`)
 
 ```c
 #include "html2tex.h"
@@ -70,7 +76,7 @@ int main() {
 }
 ```
 
-### C++ Wrapper
+### C++ API (`html2tex_cpp`)
 
 ```cpp
 #include "HtmlToLatexConverter.h"
@@ -85,47 +91,92 @@ int main() {
 }
 ```
 
-## 🔧 Integration
+## 📁 Repository Layout
 
-### Method 1: Direct File Inclusion
-Copy these files to your project:
-* `include/HtmlToLatexConverter.h`
-* `source/HtmlToLatexConverter.cpp`
-* Built static library from `bin/Release/`
+```css
+html2tex/
+├── include/
+│   ├── html2tex.h       # C API
+│   └── htmltex.h        # C++ API wrapper
+├── source/
+│   ├── html2tex.c
+│   ├── html2tex_css.c
+│   ├── html_parser.c
+│   ├── html_minify.c
+│   ├── html_prettify.c
+│   ├── tex_gen.c
+│   ├── tex_image_utils.c
+│   ├── html_converter.cpp
+│   └── html_parser.cpp
+├── examples/
+│   ├── example_1.html
+│   ├── example_2.html
+│   ├── example_3.html
+│   ├── example_4.html
+├── cmake/
+│   └── html2texConfig.cmake.in
+├── LICENSE
+├── README.md
+└── CMakeLists.txt
+```
 
-#### CMakeLists.txt:
+## 🔧 Integration Options
+
+### 1. Direct Inclusion (simplest)<br/>
+Copy these interfaces (C/C++):<br/>
+* `include/html2tex.h`
+* `include/htmltex.h`<br/>
+
+The built libraries:
+* `html2tex_c.lib/.a`
+* `html2tex_cpp.lib/.a`<br/>
+
+Example CMake:
 
 ```cmake
-# Add C++ wrapper source
-target_sources(your_target PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/HtmlToLatexConverter.cpp
-)
+target_include_directories(your_target PUBLIC third_party/html2tex/include)
 
-# Include headers
-target_include_directories(your_target PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/include
-)
-
-# Link against C library
 target_link_libraries(your_target PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lib/html2tex
+    third_party/html2tex/bin/<Debug|Release>/<x64|x86>/html2tex_c
+    third_party/html2tex/bin/<Debug|Release>/<x64|x86>/html2tex_cpp
 )
 ```
 
-### Method 2: CMake Package
+### 2. CMake Package (recommended)<br/>
+
+After installation:<br/>
 
 ```cmake
 find_package(html2tex REQUIRED)
-target_link_libraries(your_target PUBLIC html2tex::html2tex)
+
+target_link_libraries(your_target
+    PUBLIC html2tex::c
+    PUBLIC html2tex::cpp
+)
 ```
 
-### Method 3: Subdirectory
+Targets provided:<br/>
+* `html2tex::c` → C static library
+* `html2tex::cpp` → C++ wrapper<br/>
+
+Installed structure:<br/>
+
+```bash
+include/html2tex.h
+include/htmltex.h
+bin/<Debug|Release>/<x64|x86>/libhtml2tex_c.a
+bin/<Debug|Release>/<x64|x86>/lib/libhtml2tex_cpp.a
+cmake/html2tex/html2texConfig.cmake
+```
+
+### 3. Add Subdirectory<br/>
 
 ```cmake
 add_subdirectory(third_party/html2tex)
-target_link_libraries(your_target PUBLIC html2tex)
-target_include_directories(your_target PUBLIC 
-    third_party/html2tex-lib/include
+
+target_link_libraries(your_target
+    PUBLIC html2tex::c
+    PUBLIC html2tex::cpp
 )
 ```
 

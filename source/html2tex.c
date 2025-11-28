@@ -56,6 +56,54 @@ LaTeXConverter* html2tex_create(void) {
     return converter;
 }
 
+int html2tex_reset(LaTeXConverter* converter) {
+    if (!converter) return 0;
+    converter->output = NULL;
+
+    converter->output_size = 0;
+    converter->output_capacity = 0;
+
+    converter->state.indent_level = 0;
+    converter->state.list_level = 0;
+
+    converter->state.in_paragraph = 0;
+    converter->state.in_list = 0;
+
+    converter->state.table_counter = 0;
+    converter->state.table_id_counter = 0;
+
+    converter->state.image_id_counter = 0;
+    converter->state.image_caption_counter = 0;
+
+    converter->state.in_table = 0;
+    converter->state.in_table_row = 0;
+
+    converter->state.in_table_cell = 0;
+    converter->state.table_columns = 0;
+
+    converter->state.current_column = 0;
+    converter->state.table_caption = NULL;
+
+    /* initialize CSS state tracking */
+    converter->state.css_braces = 0;
+    converter->state.css_environments = 0;
+
+    converter->state.pending_margin_bottom = 0;
+    converter->state.has_bold = 0;
+
+    converter->state.has_italic = 0;
+    converter->state.has_underline = 0;
+
+    converter->state.has_color = 0;
+    converter->state.has_background = 0;
+
+    converter->state.has_font_family = 0;
+    converter->error_code = 0;
+
+    converter->error_message[0] = '\0';
+    return 1;
+}
+
 void html2tex_set_image_directory(LaTeXConverter* converter, const char* dir) {
     if (!converter) return;
 

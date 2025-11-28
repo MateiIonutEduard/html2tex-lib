@@ -29,6 +29,7 @@
 
 #include <curl/curl.h>
 #include "html2tex.h"
+#include <time.h>
 
 /* Base64 decoding table */
 static const unsigned char base64_table[256] = {
@@ -50,7 +51,6 @@ static const unsigned char base64_table[256] = {
     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80
 };
 
-/* Check if string is base64 encoded image */
 int is_base64_image(const char* src) {
     if (!src) return 0;
     return (strncmp(src, "data:image/", 11) == 0);
@@ -349,10 +349,10 @@ static char* generate_safe_filename(const char* src, int image_counter) {
     return filename;
 }
 
-/* Generate the hash corresponding to the filename. */
-static void generate_md5_hash(const char* input, char* output) {
-    /* simple hash function for generating unique filenames */
-    unsigned long hash = 5381;
+/* Generates a filename hash using the modified djb2 function. */
+static void gen_hash(const char* input, char* output) {
+    /* use timestamp to randomize */
+    unsigned long hash = 5381 ^ (unsigned long)time(NULL);
     int c;
 
     while ((c = *input++)) hash = ((hash << 5) + hash) + c;
@@ -382,7 +382,7 @@ static char* generate_unique_filename(const char* base_filename, const char* src
     free(filename);
 
     char hash[33];
-    generate_md5_hash(src, hash);
+    gen_hash(src, hash);
 
     char* unique_name = malloc(256);
     if (!unique_name) return NULL;
@@ -416,7 +416,6 @@ static char* generate_unique_filename(const char* base_filename, const char* src
     return unique_name;
 }
 
-/* Main function to download image from src both URLs and base64 strings. */
 char* download_image_src(const char* src, const char* output_dir, int image_counter) {
     if (!src || !output_dir) return NULL;
 
@@ -455,13 +454,11 @@ char* download_image_src(const char* src, const char* output_dir, int image_coun
     }
 }
 
-/* Initialize libcurl stuff. */
 int image_utils_init(void) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     return 0;
 }
 
-/* Cleanup libcurl stuff. */
 void image_utils_cleanup(void) {
     curl_global_cleanup();
 }

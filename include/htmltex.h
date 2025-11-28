@@ -9,43 +9,44 @@ using namespace std;
 
 class HtmlParser {
 private:
-    HTMLNode* node;
+    unique_ptr<HTMLNode, decltype(&html2tex_free_node)> node;
     int minify;
-
-    HTMLNode* dom_tree_copy(HTMLNode*);
-    void setParent(HTMLNode*);
+    void setParent(unique_ptr<HTMLNode, decltype(&html2tex_free_node)> new_node);
 
 public:
     HtmlParser();
 
-    /* Create a parser from the input HTML. */
+    /* Creates a parser from the input HTML. */
     HtmlParser(const string&);
 
-    /* Initialize parser from HTML; use second parameter to parse DOM efficiently. */
+    /* Initializes parser from HTML with optimization flag. */
     HtmlParser(const string&, int);
 
-    /* Instantiate parser with the input DOM tree. */
+    /* Initializes the parser with the input DOM tree. */
     HtmlParser(HTMLNode*);
 
-    /* Instantiate parser by cloning another HtmlParser instance. */
+    /* Instantiates the parser with the DOM tree and the minify option. */
+    HtmlParser(HTMLNode* node, int);
+
+    /* Clones an existing HtmlParser to create a new parser. */
     HtmlParser(const HtmlParser&);
 
-    HtmlParser& operator =(const HtmlParser&);
-    friend ostream& operator <<(ostream&, HtmlParser&);
-    friend istream& operator >>(istream&, HtmlParser&);
+    HtmlParser& operator=(const HtmlParser&);
+    friend ostream& operator<<(ostream&, HtmlParser&);
+    friend istream& operator>>(istream&, HtmlParser&);
 
-    /* Get pretty HTML from the object. */
+    /* Returns prettified HTML from this instance. */
     string toString();
-    ~HtmlParser();
+    ~HtmlParser() = default;
 };
 
 class HtmlTeXConverter {
 private:
-    LaTeXConverter* converter;
+    unique_ptr<LaTeXConverter, decltype(&html2tex_destroy)> converter;
 
 public:
     HtmlTeXConverter();
-    ~HtmlTeXConverter();
+    ~HtmlTeXConverter() = default;
 
     /* Convert the input HTML code to the corresponding LaTeX output. */
     string convert(const string&);

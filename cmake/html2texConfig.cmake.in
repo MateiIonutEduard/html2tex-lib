@@ -9,26 +9,36 @@ set(HTML2TEX_VERSION @PROJECT_VERSION@)
 # Check required components
 check_required_components(html2tex)
 
-# Create imported target aliases
-if(NOT TARGET html2tex::html2tex)
-    add_library(html2tex::html2tex INTERFACE IMPORTED)
-    set_target_properties(html2tex::html2tex PROPERTIES
-        INTERFACE_LINK_LIBRARIES html2tex
+# Create imported target aliases if they don't exist
+if(NOT TARGET html2tex::c)
+    add_library(html2tex::c INTERFACE IMPORTED)
+    set_target_properties(html2tex::c PROPERTIES
+        INTERFACE_LINK_LIBRARIES html2tex_c
+    )
+endif()
+
+if(NOT TARGET html2tex::cpp)
+    add_library(html2tex::cpp INTERFACE IMPORTED)
+    set_target_properties(html2tex::cpp PROPERTIES
+        INTERFACE_LINK_LIBRARIES html2tex_cpp
     )
 endif()
 
 # Set package variables for find_package
 set(HTML2TEX_FOUND TRUE)
 set(HTML2TEX_INCLUDE_DIRS "@PACKAGE_INCLUDE_INSTALL_DIR@")
-set(HTML2TEX_LIBRARIES html2tex::html2tex)
+set(HTML2TEX_C_LIBRARIES html2tex::c)
+set(HTML2TEX_CPP_LIBRARIES html2tex::cpp)
 
 # Provide C++ wrapper source location
-set(HTML2TEX_CPP_WRAPPER_HEADER "@PACKAGE_INCLUDE_INSTALL_DIR@/HtmlToLatexConverter.h")
-set(HTML2TEX_CPP_WRAPPER_SOURCE "@PACKAGE_SOURCE_INSTALL_DIR@/HtmlToLatexConverter.cpp")
+set(HTML2TEX_CPP_WRAPPER_HEADER "@PACKAGE_INCLUDE_INSTALL_DIR@/htmltex.h")
+set(HTML2TEX_CPP_WRAPPER_SOURCE "@PACKAGE_SOURCE_INSTALL_DIR@/html_converter.cpp")
+set(HTML2TEX_CPP_WRAPPER_SOURCE "@PACKAGE_SOURCE_INSTALL_DIR@/html_parser.cpp")
 
 # Print configuration info (optional)
 if(HTML2TEX_VERBOSE)
     message(STATUS "Found html2tex ${HTML2TEX_VERSION}")
     message(STATUS "  Include directories: ${HTML2TEX_INCLUDE_DIRS}")
-    message(STATUS "  Libraries: ${HTML2TEX_LIBRARIES}")
+    message(STATUS "  C Libraries: ${HTML2TEX_C_LIBRARIES}")
+    message(STATUS "  C++ Libraries: ${HTML2TEX_CPP_LIBRARIES}")
 endif()

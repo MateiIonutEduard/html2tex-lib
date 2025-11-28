@@ -14,7 +14,7 @@
 #include <strings.h>
 #endif
 
-/* helper function to remove !important and trim whitespace */
+/* Helper function to remove !important and trim whitespace. */
 static char* clean_css_value(char* value) {
     if (!value) return NULL;
 
@@ -43,7 +43,6 @@ static char* clean_css_value(char* value) {
     return cleaned;
 }
 
-/* check if element is block-level */
 int is_block_element(const char* tag_name) {
     if (!tag_name) return 0;
 
@@ -62,7 +61,6 @@ int is_block_element(const char* tag_name) {
     return 0;
 }
 
-/* check if element is inline */
 int is_inline_element(const char* tag_name) {
     if (!tag_name) return 0;
 
@@ -79,13 +77,12 @@ int is_inline_element(const char* tag_name) {
     return 0;
 }
 
-/* check if CSS value contains !important */
+/* Check if CSS value contains !important. */
 static int has_important(const char* value) {
     if (!value) return 0;
     return (strstr(value, "!important") != NULL);
 }
 
-/* parse CSS style string into structured properties with !important support */
 CSSProperties* parse_css_style(const char* style_str) {
     if (!style_str) return NULL;
     CSSProperties* props = calloc(1, sizeof(CSSProperties));
@@ -176,7 +173,6 @@ CSSProperties* parse_css_style(const char* style_str) {
     return props;
 }
 
-/* convert CSS length to LaTeX points */
 int css_length_to_pt(const char* length_str) {
     if (!length_str) return 0;
 
@@ -224,7 +220,6 @@ int css_length_to_pt(const char* length_str) {
     return result;
 }
 
-/* convert CSS color to hex format */
 char* css_color_to_hex(const char* color_value) {
     if (!color_value) return NULL;
 
@@ -310,8 +305,8 @@ char* css_color_to_hex(const char* color_value) {
     return result;
 }
 
-/* detect if we're inside a table cell by checking parent hierarchy */
-int is_inside_table_cell(LaTeXConverter* converter, HTMLNode* node) {
+/* Detect if we're inside a table cell by checking parent hierarchy. */
+static int is_inside_table_cell(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return converter->state.in_table_cell;
 
     /* first check converter state for table cell */
@@ -330,7 +325,6 @@ int is_inside_table_cell(LaTeXConverter* converter, HTMLNode* node) {
     return 0;
 }
 
-/* apply CSS properties to LaTeX converter */
 void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name) {
     if (!converter || !props) return;
 
@@ -549,7 +543,6 @@ void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const
     }
 }
 
-/* end CSS properties (close environments and braces) */
 void end_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name) {
     if (!converter || !props) return;
 
@@ -628,7 +621,6 @@ void reset_css_state(LaTeXConverter* converter) {
     converter->state.has_font_family = 0;
 }
 
-/* free CSS properties */
 void free_css_properties(CSSProperties* props) {
     if (!props) return;
     free(props->font_weight);

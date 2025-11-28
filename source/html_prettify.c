@@ -151,7 +151,6 @@ static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level) {
     }
 }
 
-/* Public function to write prettified HTML code to the output file. */
 int write_pretty_html(HTMLNode* root, const char* filename) {
     if (!root || !filename) return 0;
     FILE* file = fopen(filename, "w");
@@ -182,7 +181,6 @@ int write_pretty_html(HTMLNode* root, const char* filename) {
     return 1;
 }
 
-/* Alternative function that returns prettified HTML as string. */
 char* get_pretty_html(HTMLNode* root) {
     if (!root) return NULL;
 

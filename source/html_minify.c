@@ -260,7 +260,6 @@ static HTMLNode* minify_node_recursive(HTMLNode* node, int in_preformatted) {
     return new_node;
 }
 
-/* Return the DOM tree after minification. */
 HTMLNode* html2tex_minify_html(HTMLNode* root) {
     if (!root) return NULL;
 

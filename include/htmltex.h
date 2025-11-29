@@ -34,7 +34,7 @@ public:
     HtmlParser(HtmlParser&&) noexcept;
 
     HtmlParser& operator=(const HtmlParser&);
-    HtmlParser& operator=(HtmlParser&& other) noexcept;
+    HtmlParser& operator=(HtmlParser&&) noexcept;
 
     friend std::ostream& operator<<(std::ostream&, HtmlParser&);
     friend std::istream& operator>>(std::istream&, HtmlParser&);
@@ -70,9 +70,14 @@ public:
     /* Return the conversion error message. */
     std::string getErrorMessage() const;
 
+    /* Efficiently moves an existing HtmlTeXConverter instance. */
+    HtmlTeXConverter(HtmlTeXConverter&&) noexcept;
+
     /* delete copy constructor and assignment operator to prevent copying */
     HtmlTeXConverter(const HtmlTeXConverter&) = delete;
+
     HtmlTeXConverter& operator=(const HtmlTeXConverter&) = delete;
+    HtmlTeXConverter& operator=(HtmlTeXConverter&& other) noexcept;
 };
 
 #endif

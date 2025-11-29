@@ -7,6 +7,9 @@ HtmlTeXConverter::HtmlTeXConverter() : converter(nullptr, &html2tex_destroy) {
     if (raw_converter) converter.reset(raw_converter);
 }
 
+HtmlTeXConverter::HtmlTeXConverter(HtmlTeXConverter&& other) noexcept
+    : converter(std::move(other.converter)) { }
+
 bool HtmlTeXConverter::setDirectory(const std::string& fullPath) {
     if (converter) {
         html2tex_set_image_directory(converter.get(), fullPath.c_str());
@@ -43,4 +46,16 @@ int HtmlTeXConverter::getErrorCode() const {
 std::string HtmlTeXConverter::getErrorMessage() const {
     if (!converter) return "Converter not initialized.";
     return html2tex_get_error_message(converter.get());
+}
+
+HtmlTeXConverter& HtmlTeXConverter::operator=(HtmlTeXConverter&& other) noexcept {
+    if (this != &other) {
+        /* free current resources */
+        converter.reset();
+
+        /* transfer the ownership */
+        converter = std::move(other.converter);
+    }
+
+    return *this;
 }

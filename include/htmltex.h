@@ -81,7 +81,7 @@ public:
     HtmlTeXConverter(const HtmlTeXConverter&);
 
     HtmlTeXConverter& operator =(const HtmlTeXConverter&);
-    HtmlTeXConverter& operator =(HtmlTeXConverter&& other) noexcept;
+    HtmlTeXConverter& operator =(HtmlTeXConverter&&) noexcept;
 };
 
 #endif

@@ -11,10 +11,10 @@ HtmlTeXConverter::HtmlTeXConverter() : converter(nullptr, &html2tex_destroy), va
     }
 }
 
-HtmlTeXConverter::HtmlTeXConverter(const HtmlTeXConverter& converter) 
-: converter(nullptr, &html2tex_destroy), valid(converter.valid) {
-    if (converter.converter) {
-        LaTeXConverter* clone = html2tex_copy(converter.converter.get());
+HtmlTeXConverter::HtmlTeXConverter(const HtmlTeXConverter& other) 
+: converter(nullptr, &html2tex_destroy), valid(other.valid) {
+    if (other.converter) {
+        LaTeXConverter* clone = html2tex_copy(other.converter.get());
         if (clone) this->converter.reset(clone);
     }
 }
@@ -34,16 +34,14 @@ bool HtmlTeXConverter::setDirectory(const std::string& fullPath) {
 }
 
 std::string HtmlTeXConverter::convert(const std::string& html) {
-    if (!converter || !valid) return "";
+    if (!converter || !valid || html.empty()) return "";
     char* result = html2tex_convert(converter.get(), html.c_str());
 
-    if (result) {
-        std::string latex(result);
-        free(result);
-        return latex;
-    }
+    if (!result) return "";
+    std::string latex(result);
 
-    return "";
+    free(result);
+    return latex;
 }
 
 bool HtmlTeXConverter::hasError() const {
@@ -61,14 +59,17 @@ std::string HtmlTeXConverter::getErrorMessage() const {
 
 bool HtmlTeXConverter::isValid() const { return valid; }
 
-HtmlTeXConverter& HtmlTeXConverter::operator =(const HtmlTeXConverter& converter) {
-    if (this != &converter) {
-        if (converter.converter) {
-            LaTeXConverter* clone = html2tex_copy(converter.converter.get());
-            if (clone) this->converter.reset(clone);
-            else this->converter.reset();
+HtmlTeXConverter& HtmlTeXConverter::operator =(const HtmlTeXConverter& other) {
+    if (this != &other) {
+        std::unique_ptr<LaTeXConverter, decltype(&html2tex_destroy)> temp(nullptr, &html2tex_destroy);
+
+        if (other.converter) {
+            LaTeXConverter* clone = html2tex_copy(other.converter.get());
+            if (clone) temp.reset(clone);
         }
-        else this->converter.reset();
+
+        converter = std::move(temp);
+        valid = (converter != nullptr) && other.valid;
     }
 
     return *this;

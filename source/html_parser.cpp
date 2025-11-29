@@ -30,11 +30,12 @@ HtmlParser::HtmlParser(HTMLNode* raw_node, int minify_flag)
     }
 }
 
-HtmlParser::HtmlParser(const HtmlParser& parser)
-    : node(nullptr, &html2tex_free_node), minify(parser.minify) {
-    if (parser.node) {
-        HTMLNode* copied_node = dom_tree_copy(parser.node.get());
+HtmlParser::HtmlParser(const HtmlParser& other)
+    : node(nullptr, &html2tex_free_node), minify(other.minify) {
+    if (other.node) {
+        HTMLNode* copied_node = dom_tree_copy(other.node.get());
         if (copied_node) node.reset(copied_node);
+        else node.reset(nullptr);
     }
 }
 
@@ -44,19 +45,19 @@ HtmlParser::HtmlParser(HtmlParser&& other) noexcept
     other.minify = 0;
 }
 
-HtmlParser& HtmlParser::operator =(const HtmlParser& parser) {
-    if (this != &parser) {
-        /* create temporary smart pointer */
+HtmlParser& HtmlParser::operator =(const HtmlParser& other) {
+    if (this != &other) {
+        /* temp smart pointer for exception safety */
         std::unique_ptr<HTMLNode, decltype(&html2tex_free_node)> temp(nullptr, &html2tex_free_node);
 
-        if (parser.node) {
-            HTMLNode* copied_node = dom_tree_copy(parser.node.get());
+        if (other.node) {
+            HTMLNode* copied_node = dom_tree_copy(other.node.get());
             if (copied_node) temp.reset(copied_node);
         }
 
         /* commit changes */
         node = std::move(temp);
-        minify = parser.minify;
+        minify = other.minify;
     }
 
     return *this;
@@ -101,11 +102,10 @@ std::string HtmlParser::toString() const {
     if (!node) return "";
     char* output = get_pretty_html(node.get());
 
-    if (output) {
-        std::string result(output);
-        free(output);
-        return result;
-    }
+    /* additional safety check */
+    if (!output) return "";
+    std::string result(output);
 
-    return "";
+    free(output);
+    return result;
 }

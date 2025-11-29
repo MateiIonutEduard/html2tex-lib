@@ -56,52 +56,65 @@ LaTeXConverter* html2tex_create(void) {
     return converter;
 }
 
-int html2tex_reset(LaTeXConverter* converter) {
-    if (!converter) return 0;
-    converter->output = NULL;
+LaTeXConverter* html2tex_copy(LaTeXConverter* converter) {
+    if (!converter) return NULL;
+    LaTeXConverter* clone = malloc(sizeof(LaTeXConverter));
 
-    converter->output_size = 0;
-    converter->output_capacity = 0;
+    if (!clone) return NULL;
+    clone->output = converter->output ? strdup(converter->output) : NULL;
+    clone->output_size = converter->output_size;
 
-    converter->state.indent_level = 0;
-    converter->state.list_level = 0;
+    clone->output_capacity = converter->output_capacity;
+    clone->state.indent_level = converter->state.indent_level;
 
-    converter->state.in_paragraph = 0;
-    converter->state.in_list = 0;
+    clone->state.list_level = converter->state.list_level;
+    clone->state.in_paragraph = converter->state.in_paragraph;
 
-    converter->state.table_counter = 0;
-    converter->state.table_id_counter = 0;
+    clone->state.in_list = converter->state.in_list;
+    clone->state.table_counter = converter->state.table_counter;
+    clone->state.table_id_counter = converter->state.table_id_counter;
 
-    converter->state.image_id_counter = 0;
-    converter->state.image_caption_counter = 0;
+    clone->state.image_id_counter = converter->state.image_id_counter;
+    clone->state.image_caption_counter = converter->state.image_caption_counter;
 
-    converter->state.in_table = 0;
-    converter->state.in_table_row = 0;
+    clone->state.in_table = converter->state.in_table;
+    clone->state.in_table_row = converter->state.in_table_row;
 
-    converter->state.in_table_cell = 0;
-    converter->state.table_columns = 0;
+    clone->state.in_table_cell = converter->state.in_table_cell;
+    clone->state.table_columns = converter->state.table_columns;
 
-    converter->state.current_column = 0;
-    converter->state.table_caption = NULL;
+    clone->state.current_column = converter->state.current_column;
+    clone->state.table_caption = converter->state.table_caption ? 
+        strdup(converter->state.table_caption) : NULL;
 
-    /* initialize CSS state tracking */
-    converter->state.css_braces = 0;
-    converter->state.css_environments = 0;
+    /* copy of CSS state tracking */
+    clone->state.css_braces = converter->state.css_braces;
+    clone->state.css_environments = converter->state.css_environments;
 
-    converter->state.pending_margin_bottom = 0;
-    converter->state.has_bold = 0;
+    clone->state.pending_margin_bottom = converter->state.pending_margin_bottom;
+    clone->state.has_bold = converter->state.has_bold;
 
-    converter->state.has_italic = 0;
-    converter->state.has_underline = 0;
+    clone->state.has_italic = converter->state.has_italic;
+    clone->state.has_underline = converter->state.has_underline;
 
-    converter->state.has_color = 0;
-    converter->state.has_background = 0;
+    clone->state.has_color = converter->state.has_color;
+    clone->state.has_background = converter->state.has_background;
 
-    converter->state.has_font_family = 0;
-    converter->error_code = 0;
+    clone->state.has_font_family = converter->state.has_font_family;
+    clone->error_code = converter->error_code;
 
-    converter->error_message[0] = '\0';
-    return 1;
+    /* copy image configuration */
+    clone->image_output_dir = converter->image_output_dir ? strdup(converter->image_output_dir) : NULL;
+    clone->download_images = converter->download_images;
+    clone->image_counter = converter->image_counter;
+
+    /* copy error message safely */
+    if (converter->error_message[0] != '\0') {
+        strncpy(clone->error_message, converter->error_message, sizeof(clone->error_message) - 1);
+        clone->error_message[sizeof(clone->error_message) - 1] = '\0';
+    }
+    else clone->error_message[0] = '\0';
+    return clone;
 }
 
 void html2tex_set_image_directory(LaTeXConverter* converter, const char* dir) {

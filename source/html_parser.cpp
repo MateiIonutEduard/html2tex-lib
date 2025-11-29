@@ -86,14 +86,27 @@ void HtmlParser::setParent(std::unique_ptr<HTMLNode, decltype(&html2tex_free_nod
 std::istream& operator >>(std::istream& in, HtmlParser& parser) {
     std::ostringstream stream;
     stream << in.rdbuf();
-
     std::string html_content = stream.str();
-    HTMLNode* raw_node = parser.minify ? html2tex_parse_minified(html_content.c_str())
-        : html2tex_parse(html_content.c_str());
 
-    if (raw_node)
+    if (html_content.empty()) {
+        parser.setParent(std::unique_ptr<HTMLNode,
+            decltype(&html2tex_free_node)>(nullptr, &html2tex_free_node));
+        return in;
+    }
+
+    HTMLNode* raw_node = parser.minify ?
+        html2tex_parse_minified(html_content.c_str()) :
+        html2tex_parse(html_content.c_str());
+
+    if (raw_node) {
         parser.setParent(std::unique_ptr<HTMLNode,
             decltype(&html2tex_free_node)>(raw_node, &html2tex_free_node));
+    }
+    else {
+        /* reset to empty state if parsing fails */
+        parser.setParent(std::unique_ptr<HTMLNode,
+            decltype(&html2tex_free_node)>(nullptr, &html2tex_free_node));
+    }
 
     return in;
 }

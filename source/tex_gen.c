@@ -880,38 +880,86 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     }
     /* table support */
     else if (strcmp(node->tag, "table") == 0) {
-        /* reset CSS state before table */
-        reset_css_state(converter);
+        if (table_contains_only_images(node)) {
+            /* convert as figure with tabular for image table */
+            append_string(converter, "\\begin{figure}[h]\n");
+            append_string(converter, "\\centering\n");
 
-        int columns = count_table_columns(node);
-        begin_table(converter, columns);
+            /* start tabular environment */
+            int columns = count_table_columns(node);
+            append_string(converter, "\\begin{tabular}{");
 
-        /* convert all children including caption */
-        HTMLNode* child = node->children;
+            /* add column specifications */
+            for (int i = 0; i < columns; i++)
+                append_string(converter, "c");
 
-        while (child) {
-            convert_node(converter, child);
-            child = child->next;
+            append_string(converter, "}\n");
+
+            /* convert table content */
+            convert_children(converter, node);
+
+            append_string(converter, "\\end{tabular}\n");
+
+            /* add caption if exists */
+            HTMLNode* caption = NULL;
+            HTMLNode* child = node->children;
+            while (child) {
+                if (child->tag && strcmp(child->tag, "caption") == 0) {
+                    caption = child;
+                    break;
+                }
+                child = child->next;
+            }
+
+            if (caption) {
+                append_string(converter, "\\caption{");
+                convert_children(converter, caption);
+                append_string(converter, "}\n");
+            }
+
+            append_string(converter, "\\end{figure}\n");
+
+            /* end CSS properties and cleanup */
+            if (css_props) {
+                end_css_properties(converter, css_props, node->tag);
+                free_css_properties(css_props);
+            }
+            return;
         }
-
-        const char* table_id = get_attribute(node->attributes, "id");
-
-        /* reset CSS state after table */
-        if (table_id && table_id[0] != '\0')
-            end_table(converter, table_id);
         else {
-            converter->state.table_id_counter++;
-            char table_label[16];
+            /* reset CSS state before table */
+            reset_css_state(converter);
 
-            char label_counter[10];
-            itoa(converter->state.table_id_counter, label_counter, 10);
+            int columns = count_table_columns(node);
+            begin_table(converter, columns);
 
-            strcpy(table_label, "table_");
-            strcpy(table_label + 6, label_counter);
-            end_table(converter, table_label);
+            /* convert all children including caption */
+            HTMLNode* child = node->children;
+
+            while (child) {
+                convert_node(converter, child);
+                child = child->next;
+            }
+
+            const char* table_id = get_attribute(node->attributes, "id");
+
+            /* reset CSS state after table */
+            if (table_id && table_id[0] != '\0')
+                end_table(converter, table_id);
+            else {
+                converter->state.table_id_counter++;
+                char table_label[16];
+
+                char label_counter[10];
+                itoa(converter->state.table_id_counter, label_counter, 10);
+
+                strcpy(table_label, "table_");
+                strcpy(table_label + 6, label_counter);
+                end_table(converter, table_label);
+            }
+
+            reset_css_state(converter);
         }
-
-        reset_css_state(converter);
     }
     // added explicit caption handling
     else if (strcmp(node->tag, "caption") == 0) {

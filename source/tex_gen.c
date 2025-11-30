@@ -193,7 +193,7 @@ static char* color_to_hex(const char* color_value) {
     return result;
 }
 
-/* handle color application with proper nesting */
+/* Handle color application with proper nesting. */
 static void apply_color(LaTeXConverter* converter, const char* color_value, int is_background) {
     if (!color_value) return;
 
@@ -441,8 +441,92 @@ static int should_exclude_tag(const char* tag_name) {
     return 0;
 }
 
+/* Check whether the given table element contains nested tables. */
+static int should_skip_nested_table(HTMLNode* node) {
+    if (!node) return -1;
+
+    /* check if current node is a table with table descendants */
+    if (node->tag && strcmp(node->tag, "table") == 0) {
+        /* recursive check for nested tables in children */
+        HTMLNode* stack[256];
+        int stack_top = -1;
+
+        /* push children to stack */
+        HTMLNode* child = node->children;
+
+        while (child) {
+            if (stack_top < 255) 
+                stack[++stack_top] = child;
+
+            child = child->next;
+        }
+
+        while (stack_top >= 0) {
+            /* process stack */
+            HTMLNode* current = stack[stack_top--];
+
+            if (current->tag && strcmp(current->tag, "table") == 0)
+                return 1;
+
+            /* push children to stack */
+            HTMLNode* grandchild = current->children;
+
+            while (grandchild) {
+                if (stack_top < 255)
+                    stack[++stack_top] = grandchild;
+
+                grandchild = grandchild->next;
+            }
+        }
+    }
+
+    /* check if any parent is a table with table descendants */
+    HTMLNode* parent = node->parent;
+
+    while (parent) {
+        if (parent->tag && strcmp(parent->tag, "table") == 0) {
+            /* recursive check for nested tables in parent's children */
+            HTMLNode* stack[256];
+
+            int stack_top = -1;
+            HTMLNode* sibling = parent->children;
+
+            while (sibling) {
+                if (stack_top < 255)
+                    stack[++stack_top] = sibling;
+
+                sibling = sibling->next;
+            }
+
+            while (stack_top >= 0) {
+                HTMLNode* current = stack[stack_top--];
+
+                if (current->tag && strcmp(current->tag, "table") == 0)
+                    return 1;
+
+                HTMLNode* grandchild = current->children;
+
+                while (grandchild) {
+                    if (stack_top < 255)
+                        stack[++stack_top] = grandchild;
+
+                    grandchild = grandchild->next;
+                }
+            }
+        }
+
+        parent = parent->parent;
+    }
+
+    return 0;
+}
+
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return;
+
+    /* skip nested tables and all their content */
+    if (should_skip_nested_table(node))
+        return;
 
     /* handle text nodes - including those with only whitespace */
     if (!node->tag && node->content) {

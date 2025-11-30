@@ -451,7 +451,7 @@ static int should_skip_nested_table(HTMLNode* node) {
         HTMLNode* stack[256];
         int stack_top = -1;
 
-        /* push children to stack */
+        /* push children to stack (BFS search) */
         HTMLNode* child = node->children;
 
         while (child) {
@@ -519,6 +519,73 @@ static int should_skip_nested_table(HTMLNode* node) {
     }
 
     return 0;
+}
+
+/* Check whether the HTML element is a table containing only images. */
+static int table_contains_only_images(HTMLNode* node) {
+    if (!node || !node->tag || strcmp(node->tag, "table") != 0)
+        return 0;
+
+    HTMLNode* child = node->children;
+    if (!child) return 0;
+
+    while (child) {
+        if (child->tag) {
+            /* return false if the table element contains any non-image tags */
+            if (strcmp(child->tag, "img") != 0 &&
+                strcmp(child->tag, "tbody") != 0 &&
+                strcmp(child->tag, "thead") != 0 &&
+                strcmp(child->tag, "tfoot") != 0 &&
+                strcmp(child->tag, "tr") != 0 &&
+                strcmp(child->tag, "td") != 0 &&
+                strcmp(child->tag, "th") != 0 &&
+                strcmp(child->tag, "caption") != 0) {
+                return 0;
+            }
+
+            /* recursively check table structure elements */
+            if (strcmp(child->tag, "tbody") == 0 ||
+                strcmp(child->tag, "thead") == 0 ||
+                strcmp(child->tag, "tfoot") == 0 ||
+                strcmp(child->tag, "tr") == 0) {
+                if (!table_contains_only_images(child))
+                    return 0;
+            }
+
+            /* check td/th contents */
+            if (strcmp(child->tag, "td") == 0 || strcmp(child->tag, "th") == 0) {
+                HTMLNode* cell_child = child->children;
+                int has_content = 0;
+
+                while (cell_child) {
+                    if (cell_child->tag) {
+                        if (strcmp(cell_child->tag, "img") != 0)
+                            return 0;
+                        has_content = 1;
+                    }
+                    else if (cell_child->content) {
+                        /* if there's text content that's not just whitespace */
+                        for (const char* p = cell_child->content; *p; p++) {
+                            if (!isspace(*p))
+                                return 0;
+                        }
+                    }
+                    cell_child = cell_child->next;
+                }
+            }
+        }
+        else if (child->content) {
+            /* if there's text content that's not just whitespace */
+            for (const char* p = child->content; *p; p++) {
+                if (!isspace(*p))
+                    return 0;
+            }
+        }
+
+        child = child->next;
+    }
+
+    return 1;
 }
 
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {

@@ -588,6 +588,136 @@ static int table_contains_only_images(HTMLNode* node) {
     return 1;
 }
 
+static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
+    append_string(converter, "\\begin{figure}[htbp]\n");
+    append_string(converter, "\\centering\n");
+
+    append_string(converter, "\\setlength{\\fboxsep}{0pt}\n");
+    append_string(converter, "\\setlength{\\tabcolsep}{1pt}\n");
+
+    int columns = count_table_columns(node);
+    append_string(converter, "\\begin{tabular}{");
+
+    for (int i = 0; i < columns; i++)
+        append_string(converter, "c");
+
+    append_string(converter, "}\n");
+    HTMLNode* current_row = node->children;
+    int row_count = 0;
+
+    while (current_row) {
+        if (current_row->tag && (strcmp(current_row->tag, "tr") == 0)) {
+            HTMLNode* current_cell = current_row->children;
+            int col_count = 0;
+
+            while (current_cell) {
+                if (current_cell->tag && (strcmp(current_cell->tag, "td") == 0 || strcmp(current_cell->tag, "th") == 0)) {
+                    if (col_count > 0) append_string(converter, " & ");
+                    HTMLNode* img_node = current_cell->children;
+
+                    while (img_node) {
+                        if (img_node->tag && strcmp(img_node->tag, "img") == 0) {
+                            char* src = get_attribute(img_node->attributes, "src");
+                            char* width_attr = get_attribute(img_node->attributes, "width");
+
+                            char* height_attr = get_attribute(img_node->attributes, "height");
+                            char* style_attr = get_attribute(img_node->attributes, "style");
+
+                            char* image_path = NULL;
+                            if (converter->download_images && converter->image_output_dir) {
+                                converter->image_counter++;
+                                image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+                            }
+
+                            int width_pt = 20;
+                            if (!image_path) image_path = strdup(src);
+                            if (width_attr) width_pt = css_length_to_pt(width_attr);
+
+                            if (style_attr) {
+                                CSSProperties* img_css = parse_css_style(style_attr);
+                                if (img_css && img_css->width) width_pt = css_length_to_pt(img_css->width);
+                                free_css_properties(img_css);
+                            }
+
+                            char* bg_color = NULL;
+
+                            if (style_attr) {
+                                CSSProperties* img_css = parse_css_style(style_attr);
+
+                                if (img_css && img_css->background_color) 
+                                    bg_color = css_color_to_hex(img_css->background_color);
+
+                                free_css_properties(img_css);
+                            }
+
+                            if (bg_color && strcmp(bg_color, "FFFFFF") != 0) {
+                                append_string(converter, "\\colorbox[HTML]{");
+                                append_string(converter, bg_color);
+
+                                append_string(converter, "}{");
+                                free(bg_color);
+                            }
+
+                            append_string(converter, "\\includegraphics[width=");
+                            char width_str[16];
+
+                            snprintf(width_str, sizeof(width_str), "%dmm", width_pt);
+                            append_string(converter, width_str);
+                            append_string(converter, "]{");
+
+                            if (converter->download_images && converter->image_output_dir &&
+                                strstr(image_path, converter->image_output_dir) == image_path) {
+                                escape_latex_special(converter, image_path + 2);
+                            }
+                            else
+                                escape_latex(converter, image_path);
+                            append_string(converter, "}");
+
+                            if (bg_color && strcmp(bg_color, "FFFFFF") != 0)
+                                append_string(converter, "}");
+
+                            free(image_path);
+                            break;
+                        }
+
+                        img_node = img_node->next;
+                    }
+
+                    col_count++;
+                }
+
+                current_cell = current_cell->next;
+            }
+
+            append_string(converter, " \\\\\n");
+            row_count++;
+        }
+
+        current_row = current_row->next;
+    }
+
+    append_string(converter, "\\end{tabular}\n");
+    HTMLNode* caption = NULL;
+    HTMLNode* child = node->children;
+
+    while (child) {
+        if (child->tag && strcmp(child->tag, "caption") == 0) {
+            caption = child;
+            break;
+        }
+
+        child = child->next;
+    }
+
+    if (caption) {
+        append_string(converter, "\\caption{");
+        convert_children(converter, caption);
+        append_string(converter, "}\n");
+    }
+
+    append_string(converter, "\\end{figure}\n");
+}
+
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return;
 

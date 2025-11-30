@@ -1012,45 +1012,8 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     /* table support */
     else if (strcmp(node->tag, "table") == 0) {
         if (table_contains_only_images(node)) {
-            /* convert as figure with tabular for image table */
-            append_string(converter, "\\begin{figure}[h]\n");
-            append_string(converter, "\\centering\n");
+            convert_image_table(converter, node);
 
-            /* start tabular environment */
-            int columns = count_table_columns(node);
-            append_string(converter, "\\begin{tabular}{");
-
-            /* add column specifications */
-            for (int i = 0; i < columns; i++)
-                append_string(converter, "c");
-
-            append_string(converter, "}\n");
-
-            /* convert table content */
-            convert_children(converter, node);
-
-            append_string(converter, "\\end{tabular}\n");
-
-            /* add caption if exists */
-            HTMLNode* caption = NULL;
-            HTMLNode* child = node->children;
-            while (child) {
-                if (child->tag && strcmp(child->tag, "caption") == 0) {
-                    caption = child;
-                    break;
-                }
-                child = child->next;
-            }
-
-            if (caption) {
-                append_string(converter, "\\caption{");
-                convert_children(converter, caption);
-                append_string(converter, "}\n");
-            }
-
-            append_string(converter, "\\end{figure}\n");
-
-            /* end CSS properties and cleanup */
             if (css_props) {
                 end_css_properties(converter, css_props, node->tag);
                 free_css_properties(css_props);

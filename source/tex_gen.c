@@ -193,7 +193,7 @@ static char* color_to_hex(const char* color_value) {
     return result;
 }
 
-/* handle color application with proper nesting */
+/* Handle color application with proper nesting. */
 static void apply_color(LaTeXConverter* converter, const char* color_value, int is_background) {
     if (!color_value) return;
 
@@ -441,8 +441,406 @@ static int should_exclude_tag(const char* tag_name) {
     return 0;
 }
 
+/* Check whether the given table element contains nested tables. */
+static int should_skip_nested_table(HTMLNode* node) {
+    if (!node) return -1;
+
+    /* check if current node is a table with table descendants */
+    if (node->tag && strcmp(node->tag, "table") == 0) {
+        /* recursive check for nested tables in children */
+        HTMLNode* stack[256];
+        int stack_top = -1;
+
+        /* push children to stack (BFS search) */
+        HTMLNode* child = node->children;
+
+        while (child) {
+            if (stack_top < 255) 
+                stack[++stack_top] = child;
+
+            child = child->next;
+        }
+
+        while (stack_top >= 0) {
+            /* process stack */
+            HTMLNode* current = stack[stack_top--];
+
+            if (current->tag && strcmp(current->tag, "table") == 0)
+                return 1;
+
+            /* push children to stack */
+            HTMLNode* grandchild = current->children;
+
+            while (grandchild) {
+                if (stack_top < 255)
+                    stack[++stack_top] = grandchild;
+
+                grandchild = grandchild->next;
+            }
+        }
+    }
+
+    /* check if any parent is a table with table descendants */
+    HTMLNode* parent = node->parent;
+
+    while (parent) {
+        if (parent->tag && strcmp(parent->tag, "table") == 0) {
+            /* recursive check for nested tables in parent's children */
+            HTMLNode* stack[256];
+
+            int stack_top = -1;
+            HTMLNode* sibling = parent->children;
+
+            while (sibling) {
+                if (stack_top < 255)
+                    stack[++stack_top] = sibling;
+
+                sibling = sibling->next;
+            }
+
+            while (stack_top >= 0) {
+                HTMLNode* current = stack[stack_top--];
+
+                if (current->tag && strcmp(current->tag, "table") == 0)
+                    return 1;
+
+                HTMLNode* grandchild = current->children;
+
+                while (grandchild) {
+                    if (stack_top < 255)
+                        stack[++stack_top] = grandchild;
+
+                    grandchild = grandchild->next;
+                }
+            }
+        }
+
+        parent = parent->parent;
+    }
+
+    return 0;
+}
+
+/* Check whether the HTML element is a table containing only images. */
+static int table_contains_only_images(HTMLNode* node) {
+    if (!node || !node->tag || strcmp(node->tag, "table") != 0)
+        return 0;
+
+    int image_count = 0;
+    int text_content_count = 0;
+
+    /* BFS queue */
+    HTMLNode* queue[1024];
+    int front = 0, rear = 0;
+
+    /* start with table children */
+    HTMLNode* child = node->children;
+
+    while (child) {
+        if (rear < 1023)
+            queue[rear++] = child;
+
+        child = child->next;
+    }
+
+    /* process queue */
+    while (front < rear) {
+        HTMLNode* current = queue[front++];
+
+        if (current->tag) {
+            if (strcmp(current->tag, "img") == 0) {
+                image_count++;
+            }
+            else if (strcmp(current->tag, "tbody") == 0 ||
+                strcmp(current->tag, "thead") == 0 ||
+                strcmp(current->tag, "tfoot") == 0 ||
+                strcmp(current->tag, "tr") == 0 ||
+                strcmp(current->tag, "td") == 0 ||
+                strcmp(current->tag, "th") == 0 ||
+                strcmp(current->tag, "caption") == 0) {
+                /* add children to queue */
+                HTMLNode* grandchild = current->children;
+
+                while (grandchild) {
+                    if (rear < 1023)
+                        queue[rear++] = grandchild;
+                        
+                    grandchild = grandchild->next;
+                }
+            }
+            else
+                /* invalid tag found */
+                text_content_count++;
+        }
+        else if (current->content) {
+            /* check for non-whitespace text content */
+            for (const char* p = current->content; *p; p++) {
+                if (!isspace(*p)) {
+                    text_content_count++;
+                    break;
+                }
+            }
+        }
+    }
+
+    return (image_count > 0) && (text_content_count == 0);
+}
+
+/* Convert a table containing only img nodes by parsing the DOM tree. */
+static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
+    append_string(converter, "\\begin{figure}[htbp]\n");
+    append_string(converter, "\\centering\n");
+
+    append_string(converter, "\\setlength{\\fboxsep}{0pt}\n");
+    append_string(converter, "\\setlength{\\tabcolsep}{1pt}\n");
+
+    int columns = count_table_columns(node);
+    append_string(converter, "\\begin{tabular}{");
+
+    for (int i = 0; i < columns; i++)
+        append_string(converter, "c");
+
+    append_string(converter, "}\n");
+
+    /* BFS queue for table structure */
+    HTMLNode* queue[1024];
+    int front = 0, rear = 0;
+
+    /* start with table children */
+    HTMLNode* child = node->children;
+    while (child) {
+        if (rear < 1023)
+            queue[rear++] = child;
+        child = child->next;
+    }
+
+    int first_row = 1;
+
+    while (front < rear) {
+        HTMLNode* current = queue[front++];
+
+        if (current->tag) {
+            if (strcmp(current->tag, "tr") == 0) {
+                /* process row */
+                if (!first_row)
+                    append_string(converter, " \\\\\n");
+
+                first_row = 0;
+                HTMLNode* cell = current->children;
+                int col_count = 0;
+
+                while (cell) {
+                    if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
+                        if (col_count > 0)
+                            append_string(converter, " & ");
+
+                        /* search for image in this cell using BFS */
+                        HTMLNode* cell_queue[256];
+
+                        int cell_front = 0, cell_rear = 0;
+                        HTMLNode* cell_child = cell->children;
+
+                        while (cell_child) {
+                            if (cell_rear < 255)
+                                cell_queue[cell_rear++] = cell_child;
+
+                            cell_child = cell_child->next;
+                        }
+
+                        int img_found = 0;
+
+                        while (cell_front < cell_rear && !img_found) {
+                            HTMLNode* cell_node = cell_queue[cell_front++];
+
+                            if (cell_node->tag && strcmp(cell_node->tag, "img") == 0) {
+                                /* convert image */
+                                char* src = get_attribute(cell_node->attributes, "src");
+                                char* width_attr = get_attribute(cell_node->attributes, "width");
+
+                                char* height_attr = get_attribute(cell_node->attributes, "height");
+                                char* style_attr = get_attribute(cell_node->attributes, "style");
+
+                                char* image_path = NULL;
+                                if (converter->download_images && converter->image_output_dir) {
+                                    converter->image_counter++;
+                                    image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+                                }
+
+                                if (!image_path)
+                                    image_path = strdup(src);
+
+                                int width_pt = 0;
+                                int height_pt = 0;
+
+                                if (width_attr) width_pt = css_length_to_pt(width_attr);
+                                if (height_attr) height_pt = css_length_to_pt(height_attr);
+
+                                if (style_attr) {
+                                    CSSProperties* img_css = parse_css_style(style_attr);
+                                    if (img_css && img_css->width) width_pt = css_length_to_pt(img_css->width);
+
+                                    if (img_css && img_css->height) height_pt = css_length_to_pt(img_css->height);
+                                    free_css_properties(img_css);
+                                }
+
+                                char* bg_color = NULL;
+
+                                if (style_attr) {
+                                    CSSProperties* img_css = parse_css_style(style_attr);
+
+                                    if (img_css && img_css->background_color)
+                                        bg_color = css_color_to_hex(img_css->background_color);
+
+                                    free_css_properties(img_css);
+                                }
+
+                                if (bg_color && strcmp(bg_color, "FFFFFF") != 0) {
+                                    append_string(converter, "\\colorbox[HTML]{");
+                                    append_string(converter, bg_color);
+
+                                    append_string(converter, "}{");
+                                    free(bg_color);
+                                }
+
+                                append_string(converter, "\\includegraphics");
+
+                                if (width_pt > 0 || height_pt > 0) {
+                                    append_string(converter, "[");
+
+                                    if (width_pt > 0) {
+                                        char width_str[16];
+                                        snprintf(width_str, sizeof(width_str), "%dmm", width_pt);
+
+                                        append_string(converter, "width=");
+                                        append_string(converter, width_str);
+                                    }
+                                    if (height_pt > 0) {
+                                        if (width_pt > 0) append_string(converter, ", ");
+                                        char height_str[16];
+                                        snprintf(height_str, sizeof(height_str), "%dmm", height_pt);
+
+                                        append_string(converter, "height=");
+                                        append_string(converter, height_str);
+                                    }
+
+                                    append_string(converter, "]");
+                                }
+
+                                append_string(converter, "{");
+
+                                if (converter->download_images && converter->image_output_dir &&
+                                    strstr(image_path, converter->image_output_dir) == image_path) {
+                                    escape_latex_special(converter, image_path + 2);
+                                }
+                                else
+                                    escape_latex(converter, image_path);
+                                append_string(converter, "}");
+
+                                if (bg_color && strcmp(bg_color, "FFFFFF") != 0)
+                                    append_string(converter, "}");
+
+                                free(image_path);
+                                img_found = 1;
+                            }
+                            else if (cell_node->tag) {
+                                /* add children to cell queue for deeper search */
+                                HTMLNode* grandchild = cell_node->children;
+
+                                while (grandchild) {
+                                    if (cell_rear < 255)
+                                        cell_queue[cell_rear++] = grandchild;
+                                    grandchild = grandchild->next;
+                                }
+                            }
+                        }
+
+                        if (!img_found) {
+                            append_string(converter, " ");
+                        }
+
+                        col_count++;
+                    }
+                    cell = cell->next;
+                }
+            }
+            else if (strcmp(current->tag, "tbody") == 0 || strcmp(current->tag, "thead") == 0 || strcmp(current->tag, "tfoot") == 0) {
+                /* add children of table sections to main queue */
+                HTMLNode* section_child = current->children;
+
+                while (section_child) {
+                    if (rear < 1023)
+                        queue[rear++] = section_child;
+
+                    section_child = section_child->next;
+                }
+            }
+        }
+    }
+
+    append_string(converter, "\n\\end{tabular}\n");
+
+    /* handle caption */
+    HTMLNode* caption = NULL;
+    HTMLNode* caption_child = node->children;
+
+    while (caption_child) {
+        if (caption_child->tag && strcmp(caption_child->tag, "caption") == 0) {
+            caption = caption_child;
+            break;
+        }
+
+        caption_child = caption_child->next;
+    }
+
+    if (caption) {
+        append_string(converter, "\\caption{");
+        HTMLNode* text_node = caption->children;
+
+        while (text_node) {
+            if (!text_node->tag && text_node->content)
+                escape_latex(converter, text_node->content);
+
+            text_node = text_node->next;
+        }
+
+        append_string(converter, "}\n");
+    }
+
+    append_string(converter, "\\end{figure}\n");
+    append_string(converter, "\\FloatBarrier\n\n");
+}
+
+static int is_inside_table(HTMLNode* node) {
+    if (!node) return 0;
+    HTMLNode* current = node->parent;
+
+    while (current) {
+        if (current->tag && strcmp(current->tag, "table") == 0)
+            return 1;
+
+        current = current->parent;
+    }
+
+    return 0;
+}
+
+static int is_whitespace_only(const char* text) {
+    if (!text) return 1;
+
+    for (const char* p = text; *p; p++) {
+        if (!isspace(*p)) 
+            return 0;
+    }
+
+    return 1;
+}
+
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     if (!node) return;
+
+    /* skip nested tables and all their content */
+    if (should_skip_nested_table(node))
+        return;
 
     /* handle text nodes - including those with only whitespace */
     if (!node->tag && node->content) {
@@ -593,174 +991,263 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         convert_children(converter, node);
     /* image support */
     else if (strcmp(node->tag, "img") == 0) {
-        converter->image_counter++;
-        char* src = get_attribute(node->attributes, "src");
+        /* check if image is inside a table */
+        if (is_inside_table(node)) {
+            /* skip figure environment for images inside tables */
+            char* src = get_attribute(node->attributes, "src");
+            char* width_attr = get_attribute(node->attributes, "width");
 
-        char* alt = get_attribute(node->attributes, "alt");
-        char* width_attr = get_attribute(node->attributes, "width");
+            char* height_attr = get_attribute(node->attributes, "height");
+            char* style_attr = get_attribute(node->attributes, "style");
 
-        char* height_attr = get_attribute(node->attributes, "height");
-        char* image_id_attr = get_attribute(node->attributes, "id");
+            if (src) {
+                char* image_path = NULL;
 
-        if (src) {
-            char* image_path = NULL;
+                if (converter->download_images && converter->image_output_dir) {
+                    converter->image_counter++;
+                    image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+                }
 
-            /* download image if enabled and we have a directory */
-            if (converter->download_images && converter->image_output_dir)
-                image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+                if (!image_path) image_path = strdup(src);
 
-            /* if download failed or not enabled, use original src */
-            if (!image_path) {
-                /* force download for base64 images */
-                if (is_base64_image(src) && converter->download_images && converter->image_output_dir)
+                /* convert to simple includegraphics without figure */
+                append_string(converter, "\\includegraphics");
+
+                /* handle dimensions */
+                int width_pt = 0;
+                int height_pt = 0;
+
+                if (width_attr) width_pt = css_length_to_pt(width_attr);
+                if (height_attr) height_pt = css_length_to_pt(height_attr);
+
+                if (style_attr) {
+                    CSSProperties* img_css = parse_css_style(style_attr);
+                    if (img_css && img_css->width) width_pt = css_length_to_pt(img_css->width);
+
+                    if (img_css && img_css->height) height_pt = css_length_to_pt(img_css->height);
+                    free_css_properties(img_css);
+                }
+
+                if (width_pt > 0 || height_pt > 0) {
+                    append_string(converter, "[");
+
+                    if (width_pt > 0) {
+                        char width_str[32];
+                        snprintf(width_str, sizeof(width_str), "width=%dpt", width_pt);
+                        append_string(converter, width_str);
+                    }
+
+                    if (height_pt > 0) {
+                        if (width_pt > 0) append_string(converter, ",");
+                        char height_str[32];
+
+                        snprintf(height_str, sizeof(height_str), "height=%dpt", height_pt);
+                        append_string(converter, height_str);
+                    }
+
+                    append_string(converter, "]");
+                }
+
+                append_string(converter, "{");
+                if (converter->download_images && converter->image_output_dir &&
+                    strstr(image_path, converter->image_output_dir) == image_path) {
+                    escape_latex_special(converter, image_path + 2);
+                }
+                else
+                    escape_latex(converter, image_path);
+                
+                append_string(converter, "}");
+                free(image_path);
+            }
+
+            if (css_props) {
+                end_css_properties(converter, css_props, node->tag);
+                free_css_properties(css_props);
+            }
+
+            return;
+        }
+        else {
+            converter->image_counter++;
+            char* src = get_attribute(node->attributes, "src");
+
+            char* alt = get_attribute(node->attributes, "alt");
+            char* width_attr = get_attribute(node->attributes, "width");
+
+            char* height_attr = get_attribute(node->attributes, "height");
+            char* image_id_attr = get_attribute(node->attributes, "id");
+
+            if (src) {
+                char* image_path = NULL;
+
+                /* download image if enabled and we have a directory */
+                if (converter->download_images && converter->image_output_dir)
                     image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
 
-                /* use original source path */
-                if (!image_path) image_path = strdup(src);
-            }
+                /* if download failed or not enabled, use original src */
+                if (!image_path) {
+                    /* force download for base64 images */
+                    if (is_base64_image(src) && converter->download_images && converter->image_output_dir)
+                        image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
 
-            /* start figure environment */
-            append_string(converter, "\n\n\\begin{figure}[h]\n");
-
-            /* default centering */
-            append_string(converter, "\\centering\n");
-
-            /* parse CSS style for width, height overrides */
-            int width_pt = 0;
-            int height_pt = 0;
-
-            /* check if CSS style overrides width/height */
-            if (css_props) {
-                if (css_props->width) width_pt = css_length_to_pt(css_props->width);
-                if (css_props->height) height_pt = css_length_to_pt(css_props->height);
-            }
-
-            /* fall back to attribute values if CSS didn't provide dimensions */
-            if (width_pt == 0 && width_attr) width_pt = css_length_to_pt(width_attr);
-            if (height_pt == 0 && height_attr) height_pt = css_length_to_pt(height_attr);
-
-            /* escape the image path for LaTeX */
-            append_string(converter, "\\includegraphics");
-
-            /* add width/height options if specified */
-            if (width_pt > 0 || height_pt > 0) {
-                append_string(converter, "[");
-
-                if (width_pt > 0) {
-                    char width_str[32];
-                    snprintf(width_str, sizeof(width_str), "width=%dpt", width_pt);
-                    append_string(converter, width_str);
+                    /* use original source path */
+                    if (!image_path) image_path = strdup(src);
                 }
 
-                if (height_pt > 0) {
-                    if (width_pt > 0) append_string(converter, ",");
-                    char height_str[32];
+                /* start figure environment */
+                append_string(converter, "\n\n\\begin{figure}[h]\n");
 
-                    snprintf(height_str, sizeof(height_str), "height=%dpt", height_pt);
-                    append_string(converter, height_str);
+                /* default centering */
+                append_string(converter, "\\centering\n");
+
+                /* parse CSS style for width, height overrides */
+                int width_pt = 0;
+                int height_pt = 0;
+
+                /* check if CSS style overrides width/height */
+                if (css_props) {
+                    if (css_props->width) width_pt = css_length_to_pt(css_props->width);
+                    if (css_props->height) height_pt = css_length_to_pt(css_props->height);
                 }
 
-                append_string(converter, "]");
-            }
+                /* fall back to attribute values if CSS didn't provide dimensions */
+                if (width_pt == 0 && width_attr) width_pt = css_length_to_pt(width_attr);
+                if (height_pt == 0 && height_attr) height_pt = css_length_to_pt(height_attr);
 
-            append_string(converter, "{");
+                /* escape the image path for LaTeX */
+                append_string(converter, "\\includegraphics");
 
-            /* use directory/filename format for downloaded images */
-            if (converter->download_images && converter->image_output_dir 
-                && strstr(image_path, converter->image_output_dir) == image_path)
-                escape_latex_special(converter, image_path + 2);
-            else
-                /* use original path */
-                escape_latex(converter, image_path);
+                /* add width/height options if specified */
+                if (width_pt > 0 || height_pt > 0) {
+                    append_string(converter, "[");
 
-            append_string(converter, "}\n");
+                    if (width_pt > 0) {
+                        char width_str[32];
+                        snprintf(width_str, sizeof(width_str), "width=%dpt", width_pt);
+                        append_string(converter, width_str);
+                    }
 
-            /* add caption if alt text is present */
-            if (alt && alt[0] != '\0') {
-                append_string(converter, "\n");
-                append_string(converter, "\\caption{");
+                    if (height_pt > 0) {
+                        if (width_pt > 0) append_string(converter, ",");
+                        char height_str[32];
 
-                escape_latex(converter, alt);
+                        snprintf(height_str, sizeof(height_str), "height=%dpt", height_pt);
+                        append_string(converter, height_str);
+                    }
+
+                    append_string(converter, "]");
+                }
+
+                append_string(converter, "{");
+
+                /* use directory/filename format for downloaded images */
+                if (converter->download_images && converter->image_output_dir
+                    && strstr(image_path, converter->image_output_dir) == image_path)
+                    escape_latex_special(converter, image_path + 2);
+                else
+                    /* use original path */
+                    escape_latex(converter, image_path);
+
                 append_string(converter, "}\n");
+
+                /* add caption if alt text is present */
+                if (alt && alt[0] != '\0') {
+                    append_string(converter, "\n");
+                    append_string(converter, "\\caption{");
+
+                    escape_latex(converter, alt);
+                    append_string(converter, "}\n");
+                }
+                else {
+                    /* automatic caption generation using the image caption counter */
+                    converter->state.image_caption_counter++;
+                    append_string(converter, "\\caption{");
+                    char text_caption[16];
+
+                    char caption_counter[10];
+                    itoa(converter->state.image_caption_counter, caption_counter, 10);
+
+                    strcpy(text_caption, "Image ");
+                    strcpy(text_caption + 6, caption_counter);
+
+                    escape_latex(converter, text_caption);
+                    append_string(converter, "}\n");
+                }
+
+                /* add figure label if the image id attribute is present */
+                if (image_id_attr && image_id_attr[0] != '\0') {
+                    append_string(converter, "\\label{fig:");
+
+                    escape_latex(converter, image_id_attr);
+                    append_string(converter, "}\n");
+                }
+                else {
+                    /* automatic ID generation using the image id counter */
+                    converter->state.image_id_counter++;
+                    append_string(converter, "\\label{fig:");
+                    char image_label_id[16];
+
+                    char label_counter[10];
+                    itoa(converter->state.image_id_counter, label_counter, 10);
+
+                    strcpy(image_label_id, "image_");
+                    strcpy(image_label_id + 6, label_counter);
+
+                    escape_latex_special(converter, image_label_id);
+                    append_string(converter, "}\n");
+                }
+
+                /* end figure environment */
+                append_string(converter, "\\end{figure}\n");
+                append_string(converter, "\\FloatBarrier\n\n");
             }
-            else {
-                /* automatic caption generation using the image caption counter */
-                converter->state.image_caption_counter++;
-                append_string(converter, "\\caption{");
-                char text_caption[16];
-
-                char caption_counter[10];
-                itoa(converter->state.image_caption_counter, caption_counter, 10);
-
-                strcpy(text_caption, "Image ");
-                strcpy(text_caption + 6, caption_counter);
-
-                escape_latex(converter, text_caption);
-                append_string(converter, "}\n");
-            }
-
-            /* add figure label if the image id attribute is present */
-            if (image_id_attr && image_id_attr[0] != '\0') {
-                append_string(converter, "\\label{fig:");
-
-                escape_latex(converter, image_id_attr);
-                append_string(converter, "}\n");
-            }
-            else {
-                /* automatic ID generation using the image id counter */
-                converter->state.image_id_counter++;
-                append_string(converter, "\\label{fig:");
-                char image_label_id[16];
-
-                char label_counter[10];
-                itoa(converter->state.image_id_counter, label_counter, 10);
-
-                strcpy(image_label_id, "image_");
-                strcpy(image_label_id + 6, label_counter);
-
-                escape_latex_special(converter, image_label_id);
-                append_string(converter, "}\n");
-            }
-
-            /* end figure environment */
-            append_string(converter, "\\end{figure}\n");
-            append_string(converter, "\\FloatBarrier\n\n");
         }
     }
     /* table support */
     else if (strcmp(node->tag, "table") == 0) {
-        /* reset CSS state before table */
-        reset_css_state(converter);
+        if (table_contains_only_images(node)) {
+            convert_image_table(converter, node);
 
-        int columns = count_table_columns(node);
-        begin_table(converter, columns);
-
-        /* convert all children including caption */
-        HTMLNode* child = node->children;
-
-        while (child) {
-            convert_node(converter, child);
-            child = child->next;
+            if (css_props) {
+                end_css_properties(converter, css_props, node->tag);
+                free_css_properties(css_props);
+            }
+            return;
         }
-
-        const char* table_id = get_attribute(node->attributes, "id");
-
-        /* reset CSS state after table */
-        if (table_id && table_id[0] != '\0')
-            end_table(converter, table_id);
         else {
-            converter->state.table_id_counter++;
-            char table_label[16];
+            /* reset CSS state before table */
+            reset_css_state(converter);
 
-            char label_counter[10];
-            itoa(converter->state.table_id_counter, label_counter, 10);
+            int columns = count_table_columns(node);
+            begin_table(converter, columns);
 
-            strcpy(table_label, "table_");
-            strcpy(table_label + 6, label_counter);
-            end_table(converter, table_label);
+            /* convert all children including caption */
+            HTMLNode* child = node->children;
+
+            while (child) {
+                convert_node(converter, child);
+                child = child->next;
+            }
+
+            const char* table_id = get_attribute(node->attributes, "id");
+
+            /* reset CSS state after table */
+            if (table_id && table_id[0] != '\0')
+                end_table(converter, table_id);
+            else {
+                converter->state.table_id_counter++;
+                char table_label[16];
+
+                char label_counter[10];
+                itoa(converter->state.table_id_counter, label_counter, 10);
+
+                strcpy(table_label, "table_");
+                strcpy(table_label + 6, label_counter);
+                end_table(converter, table_label);
+            }
+
+            reset_css_state(converter);
         }
-
-        reset_css_state(converter);
     }
     // added explicit caption handling
     else if (strcmp(node->tag, "caption") == 0) {

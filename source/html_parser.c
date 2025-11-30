@@ -157,7 +157,7 @@ static HTMLNode* parse_element(ParserState* state) {
     state->position++;
 
     /* check for closing tag */
-    if (state->input[state->position] == '/') {
+    if (state->position < state->length && state->input[state->position] == '/') {
         state->position++;
         char* tag_name = parse_tag_name(state);
         skip_whitespace(state);
@@ -165,7 +165,7 @@ static HTMLNode* parse_element(ParserState* state) {
         if (state->position < state->length && state->input[state->position] == '>')
             state->position++;
 
-        /* closing tags don't create nodes */
+        /* closing tags do not create nodes */
         free(tag_name);
         return NULL;
     }
@@ -197,52 +197,68 @@ static HTMLNode* parse_element(ParserState* state) {
     node->next = NULL;
     node->parent = NULL;
 
-    /* parse children if not self-closing */
+    /* parse children if not self-closing and not a void element */
     if (!self_closing) {
-        HTMLNode** current_child = &node->children;
+        /* void elements in HTML cannot have content */
+        const char* void_elements[] = {
+            "area", "base", "br", "col", "embed", "hr", "img",
+            "input", "link", "meta", "param", "source", "track", "wbr", NULL
+        };
 
-        while (state->position < state->length) {
-            /* don't skip whitespace between children - it might be significant text */
+        int is_void_element = 0;
+        for (int i = 0; void_elements[i]; i++) {
+            if (strcmp(tag_name, void_elements[i]) == 0) {
+                is_void_element = 1;
+                break;
+            }
+        }
 
-            /* check for closing tag */
-            if (state->position < state->length - 1 &&
-                state->input[state->position] == '<' &&
-                state->input[state->position + 1] == '/') {
-                /* found closing tag - skip whitespace before checking */
-                size_t saved_pos = state->position;
-                skip_whitespace(state);
+        if (!is_void_element) {
+            HTMLNode** current_child = &node->children;
 
-                /* if we still have the closing tag after skipping whitespace */
-                if (state->position < state->length - 1 &&
-                    state->input[state->position] == '<' &&
-                    state->input[state->position + 1] == '/') {
-                    state->position += 2;
+            while (state->position < state->length) {
+                /* do not skip whitespace between children - it might be significant text */
 
-                    char* closing_tag = parse_tag_name(state);
+                /* check for closing tag */
+                if (state->position < state->length - 1 && state->input[state->position] == '<' && state->input[state->position + 1] == '/') {
+                    /* found closing tag - skip whitespace before checking */
+                    size_t saved_pos = state->position;
                     skip_whitespace(state);
 
-                    if (state->position < state->length && state->input[state->position] == '>')
-                        state->position++;
+                    /* if we still have the closing tag after skipping whitespace */
+                    if (state->position < state->length - 1 && state->input[state->position] == '<' && state->input[state->position + 1] == '/') {
+                        state->position += 2;
+                        char* closing_tag = parse_tag_name(state);
+                        skip_whitespace(state);
 
-                    free(closing_tag);
+                        /* only break if this is the correct closing tag for our element */
+                        if (closing_tag && tag_name && strcmp(closing_tag, tag_name) == 0) {
+                            if (state->position < state->length && state->input[state->position] == '>') {
+                                state->position++;
+                                free(closing_tag);
+                                break;
+                            }
+                        }
+
+                        /* not our closing tag, restore position and continue parsing */
+                        free(closing_tag);
+                        state->position = saved_pos;
+                    }
+                    else
+                        /* the whitespace was actually text content, restore position and parse as text */
+                        state->position = saved_pos;
+                }
+
+                HTMLNode* child = parse_node(state);
+
+                if (child) {
+                    child->parent = node;
+                    *current_child = child;
+                    current_child = &child->next;
+                }
+                else
+                    /* if no child was parsed, we might be at the end or have malformed HTML */
                     break;
-                }
-                else {
-                    /* the whitespace was actually text content, restore position and parse as text */
-                    state->position = saved_pos;
-                }
-            }
-
-            HTMLNode* child = parse_node(state);
-
-            if (child) {
-                child->parent = node;
-                *current_child = child;
-                current_child = &child->next;
-            }
-            else {
-                /* if no child was parsed, we might be at the end or have malformed HTML */
-                break;
             }
         }
     }

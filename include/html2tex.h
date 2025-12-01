@@ -212,6 +212,13 @@ extern "C" {
 	
 	/* Resets the CSS style engine state for the virtual DOM. */
 	void reset_css_state(LaTeXConverter* converter);
+	
+	/* Returns a null-terminated duplicate of the string referenced by str. */
+    char* portable_strdup(const char* str);
+	
+	#ifdef _MSC_VER
+	#define strdup portable_strdup
+	#endif
 
 #ifdef __cplusplus
 }

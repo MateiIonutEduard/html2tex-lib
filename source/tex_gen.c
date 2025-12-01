@@ -8,17 +8,57 @@
 #define GROWTH_FACTOR 2
 
 static void ensure_capacity(LaTeXConverter* converter, size_t needed) {
+    /* initialize to avoid uninitialized warnings */
     if (converter->output_capacity == 0) {
         converter->output_capacity = INITIAL_CAPACITY;
         converter->output = malloc(converter->output_capacity);
 
+        /* check allocation before using */
+        if (converter->output == NULL) {
+            fprintf(stderr, "Memory allocation failed\n");
+            exit(EXIT_FAILURE);
+        }
+
+        /* now it's safe to dereference */
         converter->output[0] = '\0';
         converter->output_size = 0;
     }
 
+    /* check if we need to grow */
     if (converter->output_size + needed >= converter->output_capacity) {
-        converter->output_capacity *= GROWTH_FACTOR;
-        converter->output = realloc(converter->output, converter->output_capacity);
+        size_t new_capacity;
+
+        /* calculate new capacity with overflow check */
+        if (converter->output_capacity > SIZE_MAX / GROWTH_FACTOR) {
+            /* overflow would occur */
+            fprintf(stderr, "Capacity overflow\n");
+            exit(EXIT_FAILURE);
+        }
+
+        new_capacity = converter->output_capacity * GROWTH_FACTOR;
+
+        /* ensure new capacity is sufficient for needed size */
+        if (new_capacity < converter->output_size + needed + 1)
+            new_capacity = converter->output_size + needed + 1;
+
+        /* reallocate with proper error handling */
+        void* new_output = realloc(converter->output, new_capacity);
+
+        if (new_output == NULL) {
+            /* keep original buffer intact, report error */
+            fprintf(stderr, "Memory reallocation failed (needed %zu bytes)\n", new_capacity);
+            exit(EXIT_FAILURE);
+        }
+
+        /* only assign after successful reallocation */
+        converter->output = new_output;
+        converter->output_capacity = new_capacity;
+    }
+
+    /* safety check - this should help the analyzer understand output is valid */
+    if (converter->output == NULL) {
+        fprintf(stderr, "Unexpected NULL pointer\n");
+        exit(EXIT_FAILURE);
     }
 }
 

@@ -8,17 +8,57 @@
 #define GROWTH_FACTOR 2
 
 static void ensure_capacity(LaTeXConverter* converter, size_t needed) {
+    /* initialize to avoid uninitialized warnings */
     if (converter->output_capacity == 0) {
         converter->output_capacity = INITIAL_CAPACITY;
         converter->output = malloc(converter->output_capacity);
 
+        /* check allocation before using */
+        if (converter->output == NULL) {
+            fprintf(stderr, "Memory allocation failed\n");
+            exit(EXIT_FAILURE);
+        }
+
+        /* now it's safe to dereference */
         converter->output[0] = '\0';
         converter->output_size = 0;
     }
 
+    /* check if we need to grow */
     if (converter->output_size + needed >= converter->output_capacity) {
-        converter->output_capacity *= GROWTH_FACTOR;
-        converter->output = realloc(converter->output, converter->output_capacity);
+        size_t new_capacity;
+
+        /* calculate new capacity with overflow check */
+        if (converter->output_capacity > SIZE_MAX / GROWTH_FACTOR) {
+            /* overflow would occur */
+            fprintf(stderr, "Capacity overflow\n");
+            exit(EXIT_FAILURE);
+        }
+
+        new_capacity = converter->output_capacity * GROWTH_FACTOR;
+
+        /* ensure new capacity is sufficient for needed size */
+        if (new_capacity < converter->output_size + needed + 1)
+            new_capacity = converter->output_size + needed + 1;
+
+        /* reallocate with proper error handling */
+        void* new_output = realloc(converter->output, new_capacity);
+
+        if (new_output == NULL) {
+            /* keep original buffer intact, report error */
+            fprintf(stderr, "Memory reallocation failed (needed %zu bytes)\n", new_capacity);
+            exit(EXIT_FAILURE);
+        }
+
+        /* only assign after successful reallocation */
+        converter->output = new_output;
+        converter->output_capacity = new_capacity;
+    }
+
+    /* safety check - this should help the analyzer understand output is valid */
+    if (converter->output == NULL) {
+        fprintf(stderr, "Unexpected NULL pointer\n");
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -805,6 +845,34 @@ static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
 
         append_string(converter, "}\n");
     }
+    else {
+        /* default caption for figure element */
+        append_string(converter, "\\caption{Figure ");
+        converter->state.figure_counter++;
+
+        char counter_str[17];
+        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.figure_counter);
+
+        append_string(converter, counter_str);
+        append_string(converter, "}\n");
+    }
+
+    const char* fig_id = get_attribute(node->attributes, "id");
+    char figure_label[17], label_counter[10];
+
+    if (!fig_id || fig_id[0] == '\0') {
+        converter->state.figure_id_counter++;
+        html2tex_itoa(converter->state.figure_id_counter, label_counter, 10);
+
+        strcpy(figure_label, "figure_");
+        strcpy(figure_label + 7, label_counter);
+    }
+    else
+        strcpy(figure_label, fig_id);
+
+    append_string(converter, "\\label{fig:");
+    escape_latex_special(converter, figure_label);
+    append_string(converter, "}\n");
 
     append_string(converter, "\\end{figure}\n");
     append_string(converter, "\\FloatBarrier\n\n");
@@ -1165,7 +1233,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                     char text_caption[16];
 
                     char caption_counter[10];
-                    itoa(converter->state.image_caption_counter, caption_counter, 10);
+                    html2tex_itoa(converter->state.image_caption_counter, caption_counter, 10);
 
                     strcpy(text_caption, "Image ");
                     strcpy(text_caption + 6, caption_counter);
@@ -1188,7 +1256,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                     char image_label_id[16];
 
                     char label_counter[10];
-                    itoa(converter->state.image_id_counter, label_counter, 10);
+                    html2tex_itoa(converter->state.image_id_counter, label_counter, 10);
 
                     strcpy(image_label_id, "image_");
                     strcpy(image_label_id + 6, label_counter);
@@ -1239,7 +1307,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 char table_label[16];
 
                 char label_counter[10];
-                itoa(converter->state.table_id_counter, label_counter, 10);
+                html2tex_itoa(converter->state.table_id_counter, label_counter, 10);
 
                 strcpy(table_label, "table_");
                 strcpy(table_label + 6, label_counter);

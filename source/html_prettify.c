@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 /* This helper function to check if element is inline, required for formatting. */
 static int is_inline_element_for_formatting(const char* tag_name) {

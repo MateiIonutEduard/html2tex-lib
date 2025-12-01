@@ -2,6 +2,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+char* portable_strdup(const char* str) {
+    if (!str) return NULL;
+
+    size_t len = strlen(str) + 1;
+    char* copy = malloc(len);
+
+    if (copy)
+        memcpy(copy, str, len);
+
+    return copy;
+}
+
 LaTeXConverter* html2tex_create(void) {
     LaTeXConverter* converter = malloc(sizeof(LaTeXConverter));
     if (!converter) return NULL;
@@ -17,10 +29,13 @@ LaTeXConverter* html2tex_create(void) {
 
     converter->state.in_list = 0;
     converter->state.table_counter = 0;
+
+    converter->state.figure_counter = 0;
     converter->state.table_id_counter = 0;
 
     converter->state.image_id_counter = 0;
     converter->state.image_caption_counter = 0;
+    converter->state.figure_id_counter = 0;
 
     converter->state.in_table = 0;
     converter->state.in_table_row = 0;
@@ -72,10 +87,13 @@ LaTeXConverter* html2tex_copy(LaTeXConverter* converter) {
 
     clone->state.in_list = converter->state.in_list;
     clone->state.table_counter = converter->state.table_counter;
+
+    clone->state.figure_counter = converter->state.figure_counter;
     clone->state.table_id_counter = converter->state.table_id_counter;
 
     clone->state.image_id_counter = converter->state.image_id_counter;
     clone->state.image_caption_counter = converter->state.image_caption_counter;
+    clone->state.figure_id_counter = converter->state.figure_id_counter;
 
     clone->state.in_table = converter->state.in_table;
     clone->state.in_table_row = converter->state.in_table_row;
@@ -197,7 +215,15 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
 
     /* return a copy of the output */
     char* result = malloc(converter->output_size + 1);
-    if (result) strcpy(result, converter->output);
+
+    if (result) {
+        if (converter->output && converter->output_size > 0) {
+            memcpy(result, converter->output, converter->output_size);
+            result[converter->output_size] = '\0';
+        }
+        else result[0] = '\0';
+    }
+
     return result;
 }
 

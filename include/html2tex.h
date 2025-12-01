@@ -40,7 +40,10 @@ extern "C" {
         int in_list;
 		
         int table_counter;
+		int figure_counter;
+		
 		int table_id_counter;
+		int figure_id_counter;
 		
 		int image_id_counter;
 		int image_caption_counter;
@@ -212,6 +215,25 @@ extern "C" {
 	
 	/* Resets the CSS style engine state for the virtual DOM. */
 	void reset_css_state(LaTeXConverter* converter);
+	
+	/* Returns a null-terminated duplicate of the string referenced by str. */
+    char* portable_strdup(const char* str);
+	
+	/* Convert an integer to a null-terminated string using the given radix and store it in buffer. */
+	void portable_itoa(int value, char* buffer, int radix);
+	
+	#ifdef _MSC_VER
+	#define strdup portable_strdup
+	#define html2tex_itoa(value, buffer, radix) _itoa((value), (buffer), (radix))
+	#else
+	#define html2tex_itoa(value, buffer, radix) portable_itoa((value), (buffer), (radix))
+	#endif
+	
+	#ifdef _WIN32
+    #define mkdir(path) _mkdir(path)
+	#else
+	#define mkdir(path) mkdir(path, 0755)
+	#endif
 
 #ifdef __cplusplus
 }

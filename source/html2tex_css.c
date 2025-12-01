@@ -15,9 +15,10 @@
 #endif
 
 /* Helper function to remove !important and trim whitespace. */
-static char* clean_css_value(char* value) {
+static char* clean_css_value(const char* value) {
     if (!value) return NULL;
 
+    /* create a mutable copy */
     char* cleaned = strdup(value);
     if (!cleaned) return NULL;
 

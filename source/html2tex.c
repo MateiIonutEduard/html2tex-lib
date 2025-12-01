@@ -209,7 +209,15 @@ char* html2tex_convert(LaTeXConverter* converter, const char* html) {
 
     /* return a copy of the output */
     char* result = malloc(converter->output_size + 1);
-    if (result) strcpy(result, converter->output);
+
+    if (result) {
+        if (converter->output && converter->output_size > 0) {
+            memcpy(result, converter->output, converter->output_size);
+            result[converter->output_size] = '\0';
+        }
+        else result[0] = '\0';
+    }
+
     return result;
 }
 

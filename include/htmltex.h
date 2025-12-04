@@ -74,7 +74,10 @@ public:
     std::string convert(const HtmlParser&);
 
     /* Convert the input HTML code to LaTeX and write the output to the file at the specified path. */
-    bool convertToFile(const std::string&, const std::string&);
+    bool convertToFile(const std::string&, const std::string&) const;
+
+    /* Convert the HtmlParser instance to LaTeX and write the result to the specified file path. */
+    bool convertToFile(const HtmlParser&, const std::string&) const;
 
     /*
        Set the directory where images extracted from the DOM tree are saved.

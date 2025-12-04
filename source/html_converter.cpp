@@ -59,7 +59,7 @@ std::string HtmlTeXConverter::convert(const std::string& html) {
     return latex;
 }
 
-bool HtmlTeXConverter::convertToFile(const std::string& html, const std::string& filePath) {
+bool HtmlTeXConverter::convertToFile(const std::string& html, const std::string& filePath) const {
     /* validate converter and HTML code */
     if (!isValid()) 
         throw std::runtime_error("Converter not initialized.");
@@ -127,6 +127,74 @@ std::string HtmlTeXConverter::convert(const HtmlParser& parser) {
 
     /* return result (compiler will optimize it) */
     return std::string(raw_result);
+}
+
+bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, const std::string& filePath) const {
+    /* fast precondition validation */
+    if (!converter || !valid) [[unlikely]]
+        throw std::runtime_error("HtmlTeXConverter in invalid state.");
+
+    /* early exit for empty parser */
+    if (!parser.HasContent())
+        return false;
+
+    /* get serialized HTML - only serialize once */
+    const std::string html = parser.toString();
+
+    /* validate serialized content */
+    if (html.empty()) [[unlikely]]
+        return false;
+
+    /* convert HTML to LaTeX */
+    char* raw_result = html2tex_convert(converter.get(), html.c_str());
+
+    /* RAII with custom deleter */
+    const auto deleter = [](char* p) noexcept {
+        if (p) std::free(p);
+    };
+
+    std::unique_ptr<char[], decltype(deleter)> result_guard(raw_result, deleter);
+
+    /* check for conversion errors */
+    if (!raw_result) [[unlikely]] {
+        if (hasError()) {
+            throw std::runtime_error(
+                "HTML to LaTeX conversion failed: " + getErrorMessage());
+        }
+
+        /* valid empty conversion */
+        return false;
+    }
+
+    /* check if result is empty */
+    if (raw_result[0] == '\0') [[unlikely]]
+        return false;
+
+    /* open file with optimal flags */
+    std::ofstream fout;
+
+    /* config stream for maximum performance */
+    fout.rdbuf()->pubsetbuf(nullptr, 0);
+    fout.open(filePath, std::ios::binary | std::ios::trunc);
+
+    if (!fout) [[unlikely]]
+        throw std::runtime_error("Cannot open output file: " + filePath);
+
+    /* get result length once */
+    const size_t result_len = std::strlen(raw_result);
+
+    /* write entire result in one operation */
+    if (!fout.write(raw_result, static_cast<std::streamsize>(result_len))) [[unlikely]]
+        throw std::runtime_error("Failed to write LaTeX output to: " + filePath);
+
+    /* explicit flush to ensure data is written */
+    fout.flush();
+
+    /* final check */
+    if (!fout) [[unlikely]]
+        throw std::runtime_error("Failed to flush LaTeX output to: " + filePath);
+
+    return true;
 }
 
 bool HtmlTeXConverter::hasError() const {

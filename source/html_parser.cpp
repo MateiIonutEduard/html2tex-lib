@@ -2,6 +2,7 @@
 #include "htmltex.h"
 #include <stdlib.h>
 #include <string>
+#include <vector>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -137,58 +138,103 @@ std::istream& operator >>(std::istream& in, HtmlParser& parser) {
 }
 
 HtmlParser HtmlParser::FromStream(std::ifstream& input) {
-    /* check if stream is usable */
+    /* fast fail checks */
     if (!input.is_open() || input.bad())
         return HtmlParser();
 
-    /* save original position */
-    std::streampos original_pos = input.tellg();
+    /* get file size for optimal buffer sizing */
+    const std::streampos current_pos = input.tellg();
+    input.seekg(0, std::ios::end);
 
-    /* try to read with reasonable limit */
-    const size_t MAX_READ = 134'217'728;
+    const std::streamsize file_size = input.tellg() - current_pos;
+    input.seekg(current_pos);
 
+    /* optimize buffer size based on file size */
+    constexpr size_t SMALL_FILE = 65'536;
+
+    constexpr size_t MEDIUM_FILE = 1'048'576;
+    constexpr size_t MAX_READ = 134'217'728;
+
+    /* reject files over limit immediately */
+    if (file_size > static_cast<std::streamsize>(MAX_READ))
+        return HtmlParser();
+
+    /* choose optimal buffer size */
+    size_t buffer_size;
+
+    if (file_size <= static_cast<std::streamsize>(SMALL_FILE))
+        buffer_size = 4096;
+    else if (file_size <= static_cast<std::streamsize>(MEDIUM_FILE))
+        buffer_size = 16384;
+    else
+        buffer_size = 65536;
+
+    /* optimize initial capacity */
     std::string content;
-    content.reserve(65536);
 
-    char buffer[4096];
+    if (file_size > 0) {
+        const size_t reserve_size = static_cast<size_t>(file_size) + 1;
+        if (reserve_size <= MAX_READ) content.reserve(reserve_size);
+    }
+
+    /* use vector for potentially better memory handling */
+    std::vector<char> buffer(buffer_size);
     size_t total_read = 0;
+    bool read_error = false;
 
-    /* read chunks until EOF or limit reached */
-    while (total_read < MAX_READ && input.good()) {
-        input.read(buffer, sizeof(buffer));
-        std::streamsize bytes = input.gcount();
+    /* single-pass optimized read loop */
+    while (total_read < MAX_READ) {
+        /* read data directly */
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize bytes_read = input.gcount();
 
-        if (bytes <= 0)
-            break;
+        /* handle read results efficiently */
+        if (bytes_read <= 0) {
+            if (input.eof()) break;
 
-        /* check for overflow - fix the analyzer warning */
-        size_t bytes_size_t = static_cast<size_t>(bytes);
-        size_t remaining_limit = MAX_READ - total_read;
-
-        if (bytes_size_t > remaining_limit) {
-            /* would exceed limit - read partial */
-            if (remaining_limit > 0 && remaining_limit <= sizeof(buffer))
-                content.append(buffer, remaining_limit);
-
+            if (input.fail() || input.bad()) {
+                read_error = true;
+                break;
+            }
+            
+            /* non-blocking or empty */
             break;
         }
 
-        content.append(buffer, bytes_size_t);
-        total_read += bytes_size_t;
-        if (input.eof()) break;
+        /* convert safely with single check */
+        const size_t bytes_size = static_cast<size_t>(bytes_read);
+
+        /* check for size limit violation */
+        if (bytes_size > MAX_READ - total_read) {
+            /* append only what fits */
+            const size_t can_append = MAX_READ - total_read;
+
+            if (can_append > 0 && can_append <= buffer.size())
+                content.append(buffer.data(), can_append);
+            
+            break;
+        }
+
+        /* bulk append for performance */
+        content.append(buffer.data(), bytes_size);
+        total_read += bytes_size;
+
+        /* early exit if EOF reached */
+        if (input.eof() || bytes_size < buffer.size())
+            break;
     }
 
-    /* restore position and return empty */
-    if (content.empty() || input.bad()) {
+    /* validate read operation */
+    if (read_error || content.empty() || input.bad()) {
         input.clear();
-        input.seekg(original_pos);
+
+        if (current_pos != std::streampos(-1))
+            input.seekg(current_pos);
+
         return HtmlParser();
     }
 
-    /* clear any failure flags (except EOF) */
-    if (!input.eof()) input.clear();
-
-    /* parse the content */
+    /* parse final content */
     if (!content.empty()) {
         HTMLNode* raw_node = html2tex_parse(content.c_str());
         if (raw_node) return HtmlParser(raw_node);

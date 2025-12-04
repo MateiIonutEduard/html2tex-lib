@@ -39,6 +39,9 @@ public:
     friend std::ostream& operator <<(std::ostream&, const HtmlParser&);
     friend std::istream& operator >>(std::istream&, HtmlParser&);
 
+    /* Initializes the parser from the given file stream. */
+    static HtmlParser FromStream(std::ifstream&);
+
     /* Returns prettified HTML from this instance. */
     std::string toString() const;
     ~HtmlParser() = default;

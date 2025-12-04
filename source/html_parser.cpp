@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 HtmlParser::HtmlParser() : node(nullptr, &html2tex_free_node), minify(0) 
@@ -133,6 +134,34 @@ std::istream& operator >>(std::istream& in, HtmlParser& parser) {
     }
 
     return in;
+}
+
+HtmlParser HtmlParser::FromStream(std::ifstream& input) {
+    /* check if input stream is in good state first */
+    if (!input.good()) return HtmlParser();
+
+    std::ostringstream stream;
+    char buffer[4096];
+
+    /* read stream in chunks until EOF or failure */
+    while (input.read(buffer, sizeof(buffer)) || input.gcount() > 0) {
+        stream.write(buffer, input.gcount());
+        if (input.eof()) break;
+    }
+
+    /* check if we actually read anything */
+    std::string html_content = stream.str();
+
+    if (html_content.empty()) {
+        /* clear failure state for future reads */
+        if (input.fail() && !input.eof()) input.clear();
+        return HtmlParser();
+    }
+
+    /* only check EOF state after ensuring that content exists */
+    if (!input.eof() && input.fail()) input.clear();
+    HTMLNode* raw_node = html2tex_parse(html_content.c_str());
+    return HtmlParser(raw_node);
 }
 
 std::string HtmlParser::toString() const {

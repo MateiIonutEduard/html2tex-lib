@@ -137,31 +137,64 @@ std::istream& operator >>(std::istream& in, HtmlParser& parser) {
 }
 
 HtmlParser HtmlParser::FromStream(std::ifstream& input) {
-    /* check if input stream is in good state first */
-    if (!input.good()) return HtmlParser();
+    /* check if stream is usable */
+    if (!input.is_open() || input.bad())
+        return HtmlParser();
 
-    std::ostringstream stream;
+    /* save original position */
+    std::streampos original_pos = input.tellg();
+
+    /* try to read with reasonable limit */
+    const size_t MAX_READ = 134'217'728;
+
+    std::string content;
+    content.reserve(65536);
+
     char buffer[4096];
+    size_t total_read = 0;
 
-    /* read stream in chunks until EOF or failure */
-    while (input.read(buffer, sizeof(buffer)) || input.gcount() > 0) {
-        stream.write(buffer, input.gcount());
+    /* read chunks until EOF or limit reached */
+    while (total_read < MAX_READ && input.good()) {
+        input.read(buffer, sizeof(buffer));
+        std::streamsize bytes = input.gcount();
+
+        if (bytes <= 0)
+            break;
+
+        /* check for overflow - fix the analyzer warning */
+        size_t bytes_size_t = static_cast<size_t>(bytes);
+        size_t remaining_limit = MAX_READ - total_read;
+
+        if (bytes_size_t > remaining_limit) {
+            /* would exceed limit - read partial */
+            if (remaining_limit > 0 && remaining_limit <= sizeof(buffer))
+                content.append(buffer, remaining_limit);
+
+            break;
+        }
+
+        content.append(buffer, bytes_size_t);
+        total_read += bytes_size_t;
         if (input.eof()) break;
     }
 
-    /* check if we actually read anything */
-    std::string html_content = stream.str();
-
-    if (html_content.empty()) {
-        /* clear failure state for future reads */
-        if (input.fail() && !input.eof()) input.clear();
+    /* restore position and return empty */
+    if (content.empty() || input.bad()) {
+        input.clear();
+        input.seekg(original_pos);
         return HtmlParser();
     }
 
-    /* only check EOF state after ensuring that content exists */
-    if (!input.eof() && input.fail()) input.clear();
-    HTMLNode* raw_node = html2tex_parse(html_content.c_str());
-    return HtmlParser(raw_node);
+    /* clear any failure flags (except EOF) */
+    if (!input.eof()) input.clear();
+
+    /* parse the content */
+    if (!content.empty()) {
+        HTMLNode* raw_node = html2tex_parse(content.c_str());
+        if (raw_node) return HtmlParser(raw_node);
+    }
+
+    return HtmlParser();
 }
 
 std::string HtmlParser::toString() const {

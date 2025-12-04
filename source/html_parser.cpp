@@ -88,7 +88,7 @@ void HtmlParser::setParent(std::unique_ptr<HTMLNode, decltype(&html2tex_free_nod
     node = std::move(new_node);
 }
 
-std::istream& operator>>(std::istream& in, HtmlParser& parser) {
+std::istream& operator >>(std::istream& in, HtmlParser& parser) {
     /* early exit for bad streams */
     if (in.bad()) {
         parser.setParent({ nullptr, &html2tex_free_node });
@@ -350,6 +350,14 @@ HtmlParser HtmlParser::FromHtml(const std::string& filePath) {
 
     if (raw_node) return HtmlParser(raw_node);
     return HtmlParser();
+}
+
+HTMLNode* HtmlParser::GetHtmlNode() const noexcept { 
+    return node.get(); 
+}
+
+bool HtmlParser::HasContent() const noexcept { 
+    return node != nullptr; 
 }
 
 std::string HtmlParser::toString() const {

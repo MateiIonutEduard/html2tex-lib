@@ -33,6 +33,12 @@ public:
     /* Efficiently moves an existing HtmlParser instance. */
     HtmlParser(HtmlParser&&) noexcept;
 
+    /* Return a pointer to the DOM tree’s root node. */
+    HTMLNode* GetHtmlNode() const noexcept;
+
+    /* Check whether the parser contains content. */
+    bool HasContent() const noexcept;
+
     HtmlParser& operator =(const HtmlParser&);
     HtmlParser& operator =(HtmlParser&&) noexcept;
 
@@ -61,6 +67,8 @@ public:
 
     /* Convert the input HTML code to the corresponding LaTeX output. */
     std::string convert(const std::string&);
+
+    std::string convert(const HtmlParser&);
 
     /*
        Set the directory where images extracted from the DOM tree are saved.

@@ -40,23 +40,42 @@ bool HtmlTeXConverter::setDirectory(const std::string& fullPath) {
 }
 
 std::string HtmlTeXConverter::convert(const std::string& html) {
-    if (!converter || !valid)
-        throw std::runtime_error("Converter not initialized.");
+    /* fast and optimized precondition checks */
+    if (!converter || !valid) [[unlikely]]
+        throw std::runtime_error("HtmlTeXConverter: Converter not initialized.");
 
-    if (html.empty()) return "";
-    char* result = html2tex_convert(converter.get(), html.c_str());
+    /* early return for empty input to avoid unnecessary allocations */
+    if (html.empty()) [[likely]]
+        return "";
 
-    if (!result) {
-        /* check if this is an actual error or just empty conversion */
-        if (hasError()) throw std::runtime_error(getErrorMessage());
+    /* convert HTML to LaTeX */
+    char* const raw_result = html2tex_convert(converter.get(), html.c_str());
 
-        /* legitimate empty result */
+    /* handle nullptr result */
+    if (!raw_result) [[unlikely]] {
+        /* distinguish between error and empty conversion */
+        if (hasError()) {
+            const std::string error_msg = getErrorMessage();
+            throw std::runtime_error("HTML to LaTeX conversion failed: " + error_msg);
+        }
+
+        /* empty result */
         return "";
     }
 
-    std::string latex(result);
-    free(result);
-    return latex;
+    /* ensures memory is freed even on exceptions */
+    const auto deleter = [](char* p) noexcept { if (p) std::free(p); };
+    std::unique_ptr<char[], decltype(deleter)> result_guard(raw_result, deleter);
+
+    /* check if result is actually empty */
+    if (raw_result[0] == '\0') [[unlikely]]
+        return "";
+
+    /* measure length first to avoid double calculation */
+    const std::size_t result_len = std::char_traits<char>::length(raw_result);
+
+    /* return the result */
+    return std::string(raw_result, result_len);
 }
 
 bool HtmlTeXConverter::convertToFile(const std::string& html, const std::string& filePath) const {

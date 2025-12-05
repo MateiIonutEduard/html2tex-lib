@@ -361,13 +361,21 @@ bool HtmlParser::HasContent() const noexcept {
 }
 
 std::string HtmlParser::toString() const {
-    if (!node) return "";
-    char* output = get_pretty_html(node.get());
+    /* quick exit for common case */
+    if (!node) [[likely]]
+        return "";
 
-    /* additional safety check */
-    if (!output) return "";
-    std::string result(output);
+    /* get formatted HTML */
+    char* const raw_output = get_pretty_html(node.get());
 
-    free(output);
-    return result;
+    /* add RAII ownership for safely destroying the allocate memory */
+    const auto deleter = [](char* p) noexcept { std::free(p); };
+    std::unique_ptr<char[], decltype(deleter)> output_guard(raw_output, deleter);
+
+    /* now check for valid output */
+    if (!raw_output || raw_output[0] == '\0') [[unlikely]]
+        return "";
+    
+    /* return output string */
+    return std::string(raw_output);
 }

@@ -7,6 +7,46 @@
 #define INITIAL_CAPACITY 1024
 #define GROWTH_FACTOR 2
 
+static inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data) {
+    NodeQueue* node = malloc(sizeof(NodeQueue));
+    if (!node) return 0;
+
+    node->data = data;
+    node->next = NULL;
+
+    if (*rear) (*rear)->next = node;
+    else *front = node;
+
+    *rear = node;
+    return 1;
+}
+
+static inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear) {
+    NodeQueue* node = *front;
+    if (!node) return NULL;
+
+    HTMLNode* data = node->data;
+    *front = node->next;
+
+    if (!*front) 
+        *rear = NULL;
+
+    free(node);
+    return data;
+}
+
+static inline void queue_cleanup(NodeQueue** front, NodeQueue** rear) {
+    NodeQueue* current = *front;
+
+    while (current) {
+        NodeQueue* next = current->next;
+        free(current);
+        current = next;
+    }
+
+    *front = *rear = NULL;
+}
+
 static void ensure_capacity(LaTeXConverter* converter, size_t needed) {
     /* initialize to avoid uninitialized warnings */
     if (converter->output_capacity == 0) {
@@ -484,81 +524,79 @@ static int should_exclude_tag(const char* tag_name) {
 /* Check whether the given table element contains nested tables. */
 static int should_skip_nested_table(HTMLNode* node) {
     if (!node) return -1;
+    NodeQueue* front = NULL;
 
-    /* check if current node is a table with table descendants */
+    NodeQueue* rear = NULL;
+    int result = 0;
+
+    /* if current node is a table, check for nested tables in descendants */
     if (node->tag && strcmp(node->tag, "table") == 0) {
-        /* recursive check for nested tables in children */
-        HTMLNode* stack[256];
-        int stack_top = -1;
+        /* if no children, definitely no nested tables */
+        if (!node->children) return 0;
 
-        /* push children to stack (BFS search) */
+        /* enqueue direct children */
         HTMLNode* child = node->children;
 
         while (child) {
-            if (stack_top < 255) 
-                stack[++stack_top] = child;
-
+            if (!queue_enqueue(&front, &rear, child)) goto cleanup;
             child = child->next;
         }
 
-        while (stack_top >= 0) {
-            /* process stack */
-            HTMLNode* current = stack[stack_top--];
+        /* BFS for nested tables */
+        while ((child = queue_dequeue(&front, &rear))) {
+            if (child->tag && strcmp(child->tag, "table") == 0) {
+                result = 1;
+                goto cleanup;
+            }
 
-            if (current->tag && strcmp(current->tag, "table") == 0)
-                return 1;
-
-            /* push children to stack */
-            HTMLNode* grandchild = current->children;
+            /* enqueue children for further search */
+            HTMLNode* grandchild = child->children;
 
             while (grandchild) {
-                if (stack_top < 255)
-                    stack[++stack_top] = grandchild;
-
+                if (!queue_enqueue(&front, &rear, grandchild)) goto cleanup;
                 grandchild = grandchild->next;
             }
         }
     }
 
-    /* check if any parent is a table with table descendants */
-    HTMLNode* parent = node->parent;
-
-    while (parent) {
+    /* check parent hierarchy for table with nested tables */
+    for (HTMLNode* parent = node->parent; parent; parent = parent->parent) {
         if (parent->tag && strcmp(parent->tag, "table") == 0) {
-            /* recursive check for nested tables in parent's children */
-            HTMLNode* stack[256];
+            /* clean and reuse the queue */
+            queue_cleanup(&front, &rear);
 
-            int stack_top = -1;
+            /* enqueue parent's children */
             HTMLNode* sibling = parent->children;
 
             while (sibling) {
-                if (stack_top < 255)
-                    stack[++stack_top] = sibling;
-
+                if (sibling != node && !queue_enqueue(&front, &rear, sibling)) goto cleanup;
                 sibling = sibling->next;
             }
 
-            while (stack_top >= 0) {
-                HTMLNode* current = stack[stack_top--];
+            /* BFS for nested tables in parent's descendants */
+            HTMLNode* current;
+            while ((current = queue_dequeue(&front, &rear))) {
+                if (current->tag && strcmp(current->tag, "table") == 0) {
+                    result = 1;
+                    goto cleanup;
+                }
 
-                if (current->tag && strcmp(current->tag, "table") == 0)
-                    return 1;
-
+                /* enqueue children for further search */
                 HTMLNode* grandchild = current->children;
-
                 while (grandchild) {
-                    if (stack_top < 255)
-                        stack[++stack_top] = grandchild;
-
+                    if (!queue_enqueue(&front, &rear, grandchild)) goto cleanup;
                     grandchild = grandchild->next;
                 }
             }
-        }
 
-        parent = parent->parent;
+            /* found nested table in parent chain? */
+            if (result) break;
+        }
     }
 
-    return 0;
+cleanup:
+    queue_cleanup(&front, &rear);
+    return result;
 }
 
 /* Check whether the HTML element is a table containing only images. */

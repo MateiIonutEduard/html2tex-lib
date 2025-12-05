@@ -13,6 +13,7 @@ extern "C" {
 	typedef struct ConverterState ConverterState;
     typedef struct LaTeXConverter LaTeXConverter;
 	typedef struct CSSProperties CSSProperties;
+	typedef struct NodeQueue NodeQueue;
 
     /* HTML node structure */
     struct HTMLNode {
@@ -23,6 +24,11 @@ extern "C" {
         HTMLNode* next;
         HTMLNode* parent;
     };
+	
+	struct NodeQueue {
+		HTMLNode* data;
+		struct NodeQueue* next;
+	};
 
     /* HTML attribute structure */
     struct HTMLAttribute {

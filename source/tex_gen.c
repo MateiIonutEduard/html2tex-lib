@@ -604,64 +604,61 @@ static int table_contains_only_images(HTMLNode* node) {
     if (!node || !node->tag || strcmp(node->tag, "table") != 0)
         return 0;
 
-    int image_count = 0;
-    int text_content_count = 0;
+    NodeQueue* front = NULL;
+    NodeQueue* rear = NULL;
+    int has_images = 0;
 
-    /* BFS queue */
-    HTMLNode* queue[1024];
-    int front = 0, rear = 0;
+    /* enqueue direct children */
+    for (HTMLNode* child = node->children; child; child = child->next)
+        if (!queue_enqueue(&front, &rear, child)) goto cleanup;
 
-    /* start with table children */
-    HTMLNode* child = node->children;
+    /* BFS traversal */
+    HTMLNode* current;
 
-    while (child) {
-        if (rear < 1023)
-            queue[rear++] = child;
-
-        child = child->next;
-    }
-
-    /* process queue */
-    while (front < rear) {
-        HTMLNode* current = queue[front++];
-
+    while ((current = queue_dequeue(&front, &rear))) {
         if (current->tag) {
+            /* check for image tag */
             if (strcmp(current->tag, "img") == 0) {
-                image_count++;
+                has_images = 1;
+                continue;
             }
-            else if (strcmp(current->tag, "tbody") == 0 ||
+
+            /* check for structural table elements */
+            if (strcmp(current->tag, "tbody") == 0 ||
                 strcmp(current->tag, "thead") == 0 ||
                 strcmp(current->tag, "tfoot") == 0 ||
                 strcmp(current->tag, "tr") == 0 ||
                 strcmp(current->tag, "td") == 0 ||
                 strcmp(current->tag, "th") == 0 ||
                 strcmp(current->tag, "caption") == 0) {
-                /* add children to queue */
-                HTMLNode* grandchild = current->children;
 
-                while (grandchild) {
-                    if (rear < 1023)
-                        queue[rear++] = grandchild;
-                        
-                    grandchild = grandchild->next;
-                }
+                /* enqueue children */
+                for (HTMLNode* child = current->children; child; child = child->next)
+                    if (!queue_enqueue(&front, &rear, child)) goto cleanup;
+                
+                continue;
             }
-            else
-                /* invalid tag found */
-                text_content_count++;
+
+            /* any other tag means failure */
+            has_images = 0;
+            goto cleanup;
         }
         else if (current->content) {
-            /* check for non-whitespace text content */
-            for (const char* p = current->content; *p; p++) {
-                if (!isspace(*p)) {
-                    text_content_count++;
-                    break;
+            /* check for non-whitespace text */
+            const char* p = current->content;
+
+            while (*p) {
+                if (!isspace(*p++)) {
+                    has_images = 0;
+                    goto cleanup;
                 }
             }
         }
     }
 
-    return (image_count > 0) && (text_content_count == 0);
+cleanup:
+    queue_cleanup(&front, &rear);
+    return has_images;
 }
 
 /* Convert a table containing only img nodes by parsing the DOM tree. */

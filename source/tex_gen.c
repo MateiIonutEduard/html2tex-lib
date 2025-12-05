@@ -736,7 +736,6 @@ static void process_table_image(LaTeXConverter* converter, HTMLNode* img_node) {
     }
     else
         escape_latex(converter, image_path);
-    
     append_string(converter, "}");
 
     /* close colorbox if opened */
@@ -782,7 +781,7 @@ static void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_nod
         append_string(converter, "Figure ");
 
         converter->state.figure_counter++;
-        char counter_str[16];
+        char counter_str[32];
 
         snprintf(counter_str, sizeof(counter_str), "%d", converter->state.figure_counter);
         append_string(converter, counter_str);
@@ -865,9 +864,8 @@ static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
                         }
                         else if (cell_node->tag) {
                             /* enqueue children for deeper search */
-                            for (HTMLNode* grandchild = cell_node->children; grandchild; grandchild = grandchild->next) {
+                            for (HTMLNode* grandchild = cell_node->children; grandchild; grandchild = grandchild->next)
                                 queue_enqueue(&cell_queue, &cell_rear, grandchild);
-                            }
                         }
                     }
 
@@ -881,9 +879,8 @@ static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
         else if (strcmp(current->tag, "tbody") == 0 || strcmp(current->tag, "thead") == 0 ||
             strcmp(current->tag, "tfoot") == 0) {
             /* enqueue section children */
-            for (HTMLNode* section_child = current->children; section_child; section_child = section_child->next) {
+            for (HTMLNode* section_child = current->children; section_child; section_child = section_child->next)
                 queue_enqueue(&queue, &rear, section_child);
-            }
         }
     }
 
@@ -893,6 +890,7 @@ static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
 
     /* finish tabular and figure */
     append_string(converter, "\n\\end{tabular}\n");
+
     append_figure_caption(converter, node);
     append_string(converter, "\\end{figure}\n\\FloatBarrier\n\n");
 }
@@ -1234,7 +1232,6 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 else
                     /* use original path */
                     escape_latex(converter, image_path);
-
                 append_string(converter, "}\n");
 
                 /* add caption if alt text is present */
@@ -1249,9 +1246,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                     /* automatic caption generation using the image caption counter */
                     converter->state.image_caption_counter++;
                     append_string(converter, "\\caption{");
-                    char text_caption[17];
+                    char text_caption[64];
 
-                    char caption_counter[10];
+                    char caption_counter[32];
                     html2tex_itoa(converter->state.image_caption_counter, caption_counter, 10);
                     strcpy(text_caption, "Image ");
 
@@ -1273,9 +1270,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                     /* automatic ID generation using the image id counter */
                     converter->state.image_id_counter++;
                     append_string(converter, "\\label{fig:");
-                    char image_label_id[17];
+                    char image_label_id[64];
 
-                    char label_counter[10];
+                    char label_counter[32];
                     html2tex_itoa(converter->state.image_id_counter, label_counter, 10);
                     strcpy(image_label_id, "image_");
 
@@ -1325,9 +1322,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 end_table(converter, table_id);
             else {
                 converter->state.table_id_counter++;
-                char table_label[16];
+                char table_label[64];
 
-                char label_counter[10];
+                char label_counter[32];
                 html2tex_itoa(converter->state.table_id_counter, label_counter, 10);
 
                 strcpy(table_label, "table_");
@@ -1501,10 +1498,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             append_string(converter, " ");
         }
     }
-    else {
+    else
         /* unknown tag, just convert children */
         convert_children(converter, node);
-    }
 
     /* end CSS properties after element content - but skip for table cells since we handle them separately */
     if (css_props) {

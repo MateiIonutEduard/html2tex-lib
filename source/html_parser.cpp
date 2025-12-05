@@ -193,7 +193,7 @@ std::istream& operator >>(std::istream& in, HtmlParser& parser) {
     return in;
 }
 
-HtmlParser HtmlParser::FromStream(std::ifstream& input) {
+HtmlParser HtmlParser::fromStream(std::ifstream& input) {
     /* fast fail checks */
     if (!input.is_open() || input.bad())
         return HtmlParser();
@@ -299,7 +299,7 @@ HtmlParser HtmlParser::FromStream(std::ifstream& input) {
     return HtmlParser();
 }
 
-HtmlParser HtmlParser::FromHtml(const std::string& filePath) {
+HtmlParser HtmlParser::fromHtml(const std::string& filePath) {
     /* open with optimal flags for reading */
     std::ifstream fin(filePath, std::ios::binary | std::ios::ate);
     if (!fin.is_open()) return HtmlParser();
@@ -352,17 +352,17 @@ HtmlParser HtmlParser::FromHtml(const std::string& filePath) {
     return HtmlParser();
 }
 
-HTMLNode* HtmlParser::GetHtmlNode() const noexcept { 
+HTMLNode* HtmlParser::getHtmlNode() const noexcept { 
     return node.get(); 
 }
 
-bool HtmlParser::HasContent() const noexcept { 
+bool HtmlParser::hasContent() const noexcept { 
     return node != nullptr; 
 }
 
-void HtmlParser::WriteTo(const std::string& filePath) const {
+void HtmlParser::writeTo(const std::string& filePath) const {
     /* validate the state */
-    if (!HasContent()) 
+    if (!hasContent()) 
         throw std::logic_error("Parser contains no HTML content.");
 
     /* check if the input path is not empty */
@@ -382,7 +382,7 @@ void HtmlParser::WriteTo(const std::string& filePath) const {
 
 std::string HtmlParser::toString() const {
     /* quick exit for common case */
-    if (!node) [[likely]]
+    if (!node)
         return "";
 
     /* get formatted HTML */
@@ -393,7 +393,7 @@ std::string HtmlParser::toString() const {
     std::unique_ptr<char[], decltype(deleter)> output_guard(raw_output, deleter);
 
     /* now check for valid output */
-    if (!raw_output || raw_output[0] == '\0') [[unlikely]]
+    if (!raw_output || raw_output[0] == '\0')
         return "";
     
     /* return output string */

@@ -35,10 +35,10 @@ public:
     HtmlParser(HtmlParser&&) noexcept;
 
     /* Return a pointer to the DOM tree’s root node. */
-    HTMLNode* GetHtmlNode() const noexcept;
+    HTMLNode* getHtmlNode() const noexcept;
 
     /* Check whether the parser contains content. */
-    bool HasContent() const noexcept;
+    bool hasContent() const noexcept;
 
     HtmlParser& operator =(const HtmlParser&);
     HtmlParser& operator =(HtmlParser&&) noexcept;
@@ -47,13 +47,13 @@ public:
     friend std::istream& operator >>(std::istream&, HtmlParser&);
 
     /* Initializes the parser from the given file stream. */
-    static HtmlParser FromStream(std::ifstream&);
+    static HtmlParser fromStream(std::ifstream&);
 
     /* Creates a parser from the given HTML file path. */
-    static HtmlParser FromHtml(const std::string&);
+    static HtmlParser fromHtml(const std::string&);
 
     /* Write the DOM tree in HTML format to the file at the specified path. */
-    void WriteTo(const std::string&) const;
+    void writeTo(const std::string&) const;
 
     /* Returns prettified HTML from this instance. */
     std::string toString() const;

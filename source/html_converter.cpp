@@ -41,18 +41,18 @@ bool HtmlTeXConverter::setDirectory(const std::string& fullPath) {
 
 std::string HtmlTeXConverter::convert(const std::string& html) {
     /* fast and optimized precondition checks */
-    if (!converter || !valid) [[unlikely]]
+    if (!converter || !valid)
         throw std::runtime_error("HtmlTeXConverter: Converter not initialized.");
 
     /* early return for empty input to avoid unnecessary allocations */
-    if (html.empty()) [[likely]]
+    if (html.empty())
         return "";
 
     /* convert HTML to LaTeX */
     char* const raw_result = html2tex_convert(converter.get(), html.c_str());
 
     /* handle nullptr result */
-    if (!raw_result) [[unlikely]] {
+    if (!raw_result) {
         /* distinguish between error and empty conversion */
         if (hasError()) {
             const std::string error_msg = getErrorMessage();
@@ -68,7 +68,7 @@ std::string HtmlTeXConverter::convert(const std::string& html) {
     std::unique_ptr<char[], decltype(deleter)> result_guard(raw_result, deleter);
 
     /* check if result is actually empty */
-    if (raw_result[0] == '\0') [[unlikely]]
+    if (raw_result[0] == '\0')
         return "";
 
     /* measure length first to avoid double calculation */
@@ -150,18 +150,18 @@ std::string HtmlTeXConverter::convert(const HtmlParser& parser) {
 
 bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, const std::string& filePath) const {
     /* fast precondition validation */
-    if (!converter || !valid) [[unlikely]]
+    if (!converter || !valid)
         throw std::runtime_error("HtmlTeXConverter in invalid state.");
 
     /* early exit for empty parser */
-    if (!parser.HasContent())
+    if (!parser.hasContent())
         return false;
 
     /* get serialized HTML - only serialize once */
     const std::string html = parser.toString();
 
     /* validate serialized content */
-    if (html.empty()) [[unlikely]]
+    if (html.empty())
         return false;
 
     /* convert HTML to LaTeX */
@@ -175,7 +175,7 @@ bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, const std::string
     std::unique_ptr<char[], decltype(deleter)> result_guard(raw_result, deleter);
 
     /* check for conversion errors */
-    if (!raw_result) [[unlikely]] {
+    if (!raw_result) {
         if (hasError()) {
             throw std::runtime_error(
                 "HTML to LaTeX conversion failed: " + getErrorMessage());
@@ -186,7 +186,7 @@ bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, const std::string
     }
 
     /* check if result is empty */
-    if (raw_result[0] == '\0') [[unlikely]]
+    if (raw_result[0] == '\0')
         return false;
 
     /* open file with optimal flags */
@@ -196,21 +196,21 @@ bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, const std::string
     fout.rdbuf()->pubsetbuf(nullptr, 0);
     fout.open(filePath, std::ios::binary | std::ios::trunc);
 
-    if (!fout) [[unlikely]]
+    if (!fout)
         throw std::runtime_error("Cannot open output file: " + filePath);
 
     /* get result length once */
     const size_t result_len = std::strlen(raw_result);
 
     /* write entire result in one operation */
-    if (!fout.write(raw_result, static_cast<std::streamsize>(result_len))) [[unlikely]]
+    if (!fout.write(raw_result, static_cast<std::streamsize>(result_len)))
         throw std::runtime_error("Failed to write LaTeX output to: " + filePath);
 
     /* explicit flush to ensure data is written */
     fout.flush();
 
     /* final check */
-    if (!fout) [[unlikely]]
+    if (!fout)
         throw std::runtime_error("Failed to flush LaTeX output to: " + filePath);
 
     return true;
@@ -218,18 +218,18 @@ bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, const std::string
 
 bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, std::ofstream& output) const {
     /* fast precondition validation */
-    if (!converter || !valid) [[unlikely]]
+    if (!converter || !valid)
         throw std::runtime_error("HtmlTeXConverter: Converter not initialized.");
 
     /* early exit for empty parser */
-    if (!parser.HasContent())
+    if (!parser.hasContent())
         return false;
 
     /* get serialized HTML - only serialize once */
     const std::string html = parser.toString();
 
     /* validate serialized content */
-    if (html.empty()) [[unlikely]]
+    if (html.empty())
         return false;
 
     /* convert HTML to LaTeX */
@@ -244,7 +244,7 @@ bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, std::ofstream& ou
     std::unique_ptr<char[], decltype(deleter)> result_guard(raw_result, deleter);
 
     /* check for conversion errors */
-    if (!raw_result) [[unlikely]] {
+    if (!raw_result) {
         if (hasError()) {
             throw std::runtime_error(
                 std::string("HTML to LaTeX conversion failed: ") + getErrorMessage());
@@ -255,20 +255,20 @@ bool HtmlTeXConverter::convertToFile(const HtmlParser& parser, std::ofstream& ou
     }
 
     /* check if result is empty */
-    if (raw_result[0] == '\0') [[unlikely]]
+    if (raw_result[0] == '\0')
         return false;
 
     /* get result length once */
     const std::size_t result_len = std::strlen(raw_result);
 
     /* write entire result in one operation */
-    if (!output.write(raw_result, static_cast<std::streamsize>(result_len))) [[unlikely]]
+    if (!output.write(raw_result, static_cast<std::streamsize>(result_len)))
         throw std::runtime_error("Failed to write LaTeX output to stream.");
 
     /* ensure data is written */
     output.flush();
 
-    if (!output) [[unlikely]]
+    if (!output)
         throw std::runtime_error("Failed to flush LaTeX output to stream.");
 
     return true;

@@ -1154,8 +1154,9 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         }
         else {
             converter->image_counter++;
-            char* src = get_attribute(node->attributes, "src");
+            converter->state.image_internal_counter++;
 
+            char* src = get_attribute(node->attributes, "src");
             char* alt = get_attribute(node->attributes, "alt");
             char* width_attr = get_attribute(node->attributes, "width");
 
@@ -1244,12 +1245,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 }
                 else {
                     /* automatic caption generation using the image caption counter */
-                    converter->state.image_caption_counter++;
                     append_string(converter, "\\caption{");
                     char text_caption[64];
 
                     char caption_counter[32];
-                    html2tex_itoa(converter->state.image_caption_counter, caption_counter, 10);
+                    html2tex_itoa(converter->state.image_internal_counter, caption_counter, 10);
                     strcpy(text_caption, "Image ");
 
                     strcpy(text_caption + 6, caption_counter);
@@ -1268,12 +1268,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 }
                 else {
                     /* automatic ID generation using the image id counter */
-                    converter->state.image_id_counter++;
                     append_string(converter, "\\label{fig:");
                     char image_label_id[64];
 
                     char label_counter[32];
-                    html2tex_itoa(converter->state.image_id_counter, label_counter, 10);
+                    html2tex_itoa(converter->state.image_internal_counter, label_counter, 10);
                     strcpy(image_label_id, "image_");
 
                     strcpy(image_label_id + 6, label_counter);

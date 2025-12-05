@@ -47,13 +47,11 @@ extern "C" {
 		
         int table_counter;
 		int figure_counter;
+		int image_internal_counter;
 		
 		int table_id_counter;
 		int figure_id_counter;
-		
-		int image_id_counter;
-		int image_caption_counter;
-		
+
         int in_table;
         int in_table_row;
 		

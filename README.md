@@ -99,21 +99,24 @@ char* read_file(const char* filename) {
 
 int main(int argc, char** argv) {
    /* check command line arguments */
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <html_file_path> <output_image_directory>\n", argv[0]);
+    if (argc != 4) {
+        fprintf(stderr, "Usage: %s <output_image_directory> <html_file_path> <latex_file_path>\n", argv[0]);
         return 1;
     }
 
     LaTeXConverter* converter = html2tex_create();
-    html2tex_set_image_directory(converter, argv[2]);
+    html2tex_set_image_directory(converter, argv[1]);
 
     html2tex_set_download_images(converter, 1);
-    char* html_data = GetHTML(argv[1]);
+    char* html_data = GetHTML(argv[2]);
     char* latex = html2tex_convert(converter, html_data);
 
     if (latex) {
-        printf("\"%s\"\n", latex);
-        free(latex);
+        FILE* output = fopen(argv[3], "w");
+		fwrite(latex, sizeof(char), strlen(latex), output);
+		
+        free(latex); 
+		fclose(output);
     }
 
     html2tex_destroy(converter);

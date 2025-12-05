@@ -12,7 +12,7 @@ HtmlParser::HtmlParser() : node(nullptr, &html2tex_free_node), minify(0)
 
 HtmlParser::HtmlParser(const std::string& html) : HtmlParser(html, 0) { }
 
-HtmlParser::HtmlParser(const std::string& html, int minify_flag)
+HtmlParser::HtmlParser(const std::string& html, int minify_flag) noexcept
     : node(nullptr, &html2tex_free_node), minify(minify_flag) {
     /* empty parser, but valid state */
     if (html.empty()) return;
@@ -27,7 +27,7 @@ HtmlParser::HtmlParser(const std::string& html, int minify_flag)
 HtmlParser::HtmlParser(HTMLNode* raw_node) : HtmlParser(raw_node, 0)
 { }
 
-HtmlParser::HtmlParser(HTMLNode* raw_node, int minify_flag)
+HtmlParser::HtmlParser(HTMLNode* raw_node, int minify_flag) noexcept
     : node(nullptr, &html2tex_free_node), minify(minify_flag) {
     /* object is in empty but valid state */
     if (!raw_node) return;
@@ -36,7 +36,7 @@ HtmlParser::HtmlParser(HTMLNode* raw_node, int minify_flag)
     if (copied_node) node.reset(copied_node);
 }
 
-HtmlParser::HtmlParser(const HtmlParser& other)
+HtmlParser::HtmlParser(const HtmlParser& other) noexcept
     : node(nullptr, &html2tex_free_node), minify(other.minify) {
     if (other.node) {
         HTMLNode* copied_node = dom_tree_copy(other.node.get());
@@ -84,7 +84,7 @@ std::ostream& operator <<(std::ostream& out, const HtmlParser& parser) {
     return out;
 }
 
-void HtmlParser::setParent(std::unique_ptr<HTMLNode, decltype(&html2tex_free_node)> new_node) {
+void HtmlParser::setParent(std::unique_ptr<HTMLNode, decltype(&html2tex_free_node)> new_node) noexcept {
     node = std::move(new_node);
 }
 
@@ -193,7 +193,7 @@ std::istream& operator >>(std::istream& in, HtmlParser& parser) {
     return in;
 }
 
-HtmlParser HtmlParser::fromStream(std::ifstream& input) {
+HtmlParser HtmlParser::fromStream(std::ifstream& input) noexcept {
     /* fast fail checks */
     if (!input.is_open() || input.bad())
         return HtmlParser();
@@ -299,7 +299,7 @@ HtmlParser HtmlParser::fromStream(std::ifstream& input) {
     return HtmlParser();
 }
 
-HtmlParser HtmlParser::fromHtml(const std::string& filePath) {
+HtmlParser HtmlParser::fromHtml(const std::string& filePath) noexcept {
     /* open with optimal flags for reading */
     std::ifstream fin(filePath, std::ios::binary | std::ios::ate);
     if (!fin.is_open()) return HtmlParser();
@@ -380,7 +380,7 @@ void HtmlParser::writeTo(const std::string& filePath) const {
     }
 }
 
-std::string HtmlParser::toString() const {
+std::string HtmlParser::toString() const noexcept {
     /* quick exit for common case */
     if (!node)
         return "";

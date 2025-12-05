@@ -13,7 +13,7 @@ HtmlTeXConverter::HtmlTeXConverter() : converter(nullptr, &html2tex_destroy), va
     }
 }
 
-HtmlTeXConverter::HtmlTeXConverter(const HtmlTeXConverter& other) 
+HtmlTeXConverter::HtmlTeXConverter(const HtmlTeXConverter& other) noexcept
 : converter(nullptr, &html2tex_destroy), valid(false) {
     if (other.converter && other.valid) {
         LaTeXConverter* clone = html2tex_copy(other.converter.get());
@@ -31,7 +31,7 @@ HtmlTeXConverter::HtmlTeXConverter(HtmlTeXConverter&& other) noexcept
     other.valid = false;
 }
 
-bool HtmlTeXConverter::setDirectory(const std::string& fullPath) {
+bool HtmlTeXConverter::setDirectory(const std::string& fullPath) const noexcept {
     if (!converter || !valid) return false;
     html2tex_set_image_directory(converter.get(), fullPath.c_str());
 
@@ -39,7 +39,7 @@ bool HtmlTeXConverter::setDirectory(const std::string& fullPath) {
     return true;
 }
 
-std::string HtmlTeXConverter::convert(const std::string& html) {
+std::string HtmlTeXConverter::convert(const std::string& html) const {
     /* fast and optimized precondition checks */
     if (!converter || !valid)
         throw std::runtime_error("HtmlTeXConverter: Converter not initialized.");
@@ -115,7 +115,7 @@ bool HtmlTeXConverter::convertToFile(const std::string& html, const std::string&
     return true;
 }
 
-std::string HtmlTeXConverter::convert(const HtmlParser& parser) {
+std::string HtmlTeXConverter::convert(const HtmlParser& parser) const {
     /* precondition validation */
     if (!isValid())
         throw std::runtime_error("HtmlTeXConverter in invalid state.");
@@ -289,7 +289,7 @@ std::string HtmlTeXConverter::getErrorMessage() const {
 
 bool HtmlTeXConverter::isValid() const { return valid; }
 
-HtmlTeXConverter& HtmlTeXConverter::operator =(const HtmlTeXConverter& other) {
+HtmlTeXConverter& HtmlTeXConverter::operator =(const HtmlTeXConverter& other) noexcept {
     if (this != &other) {
         std::unique_ptr<LaTeXConverter, decltype(&html2tex_destroy)> temp(nullptr, &html2tex_destroy);
         bool new_valid = false;

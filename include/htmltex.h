@@ -10,7 +10,7 @@ class HtmlParser {
 private:
     std::unique_ptr<HTMLNode, decltype(&html2tex_free_node)> node;
     int minify;
-    void setParent(std::unique_ptr<HTMLNode, decltype(&html2tex_free_node)> new_node);
+    void setParent(std::unique_ptr<HTMLNode, decltype(&html2tex_free_node)> new_node) noexcept;
 
 public:
     /* Create an empty, valid parser instance. */
@@ -20,16 +20,16 @@ public:
     explicit HtmlParser(const std::string&);
 
     /* Initializes parser from HTML with optimization flag. */
-    HtmlParser(const std::string&, int);
+    HtmlParser(const std::string&, int) noexcept;
 
     /* Initializes the parser with the input DOM tree. */
     explicit HtmlParser(HTMLNode*);
 
     /* Instantiates the parser with the DOM tree and the minify option. */
-    HtmlParser(HTMLNode*, int);
+    HtmlParser(HTMLNode*, int) noexcept;
 
     /* Clones an existing HtmlParser to create a new parser. */
-    HtmlParser(const HtmlParser&);
+    HtmlParser(const HtmlParser&) noexcept;
 
     /* Efficiently moves an existing HtmlParser instance. */
     HtmlParser(HtmlParser&&) noexcept;
@@ -47,16 +47,16 @@ public:
     friend std::istream& operator >>(std::istream&, HtmlParser&);
 
     /* Initializes the parser from the given file stream. */
-    static HtmlParser fromStream(std::ifstream&);
+    static HtmlParser fromStream(std::ifstream&) noexcept;
 
     /* Creates a parser from the given HTML file path. */
-    static HtmlParser fromHtml(const std::string&);
+    static HtmlParser fromHtml(const std::string&) noexcept;
 
     /* Write the DOM tree in HTML format to the file at the specified path. */
     void writeTo(const std::string&) const;
 
     /* Returns prettified HTML from this instance. */
-    std::string toString() const;
+    std::string toString() const noexcept;
     ~HtmlParser() = default;
 };
 
@@ -71,10 +71,10 @@ public:
     ~HtmlTeXConverter() = default;
 
     /* Convert the input HTML code to the corresponding LaTeX output. */
-    std::string convert(const std::string&);
+    std::string convert(const std::string&) const;
 
     /* Convert the HtmlParser instance to its corresponding LaTeX output. */
-    std::string convert(const HtmlParser&);
+    std::string convert(const HtmlParser&) const;
 
     /* Convert the input HTML code to LaTeX and write the output to the file at the specified path. */
     bool convertToFile(const std::string&, const std::string&) const;
@@ -89,7 +89,7 @@ public:
        Set the directory where images extracted from the DOM tree are saved.
        @return true on success, false otherwise.
     */
-    bool setDirectory(const std::string&);
+    bool setDirectory(const std::string&) const noexcept;
 
     /* Check for errors during conversion. */
     bool hasError() const;
@@ -107,9 +107,9 @@ public:
     HtmlTeXConverter(HtmlTeXConverter&&) noexcept;
 
     /* Creates a new HtmlTeXConverter by copying an existing instance. */
-    HtmlTeXConverter(const HtmlTeXConverter&);
+    HtmlTeXConverter(const HtmlTeXConverter&) noexcept;
 
-    HtmlTeXConverter& operator =(const HtmlTeXConverter&);
+    HtmlTeXConverter& operator =(const HtmlTeXConverter&) noexcept;
     HtmlTeXConverter& operator =(HtmlTeXConverter&&) noexcept;
 };
 

@@ -131,23 +131,24 @@ int main(int argc, char** argv) {
 
 int main(int argc, char** argv) {
     /* check command line arguments */
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <html_file_path> <output_image_directory>" << std::endl;
+    if (argc != 4) {
+        std::cerr << "Usage: " << argv[0] << " <output_image_directory> <html_file_path> <latex_file_path>" << std::endl;
         return 1;
     }
 
-	std::ifstream in(argv[1]);
-	std::ostringstream stream;
-	stream << in.rdbuf();
-
-	std::string str = stream.str();
-	in.close();
-
 	HtmlTeXConverter util;
-	util.setDirectory(argv[2]);
-
-	std::string latex = util.convert(str);
-	std::cout << latex << std::endl;
+	util.setDirectory(argv[1]);
+	
+	ifstream fin(argv[2]);
+	HtmlParser parser; 
+	
+	fin >> parser;
+	fin.close();
+    
+	ofstream fout(argv[3]);
+	util.convertToFile(parser, fout);
+	
+	fout.close();
 	return 0;
 }
 ```

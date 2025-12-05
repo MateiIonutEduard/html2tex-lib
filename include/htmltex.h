@@ -52,6 +52,9 @@ public:
     /* Creates a parser from the given HTML file path. */
     static HtmlParser FromHtml(const std::string&);
 
+    /* Write the DOM tree in HTML format to the file at the specified path. */
+    void WriteTo(const std::string&) const;
+
     /* Returns prettified HTML from this instance. */
     std::string toString() const;
     ~HtmlParser() = default;

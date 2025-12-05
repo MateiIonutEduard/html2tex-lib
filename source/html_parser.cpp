@@ -360,6 +360,26 @@ bool HtmlParser::HasContent() const noexcept {
     return node != nullptr; 
 }
 
+void HtmlParser::WriteTo(const std::string& filePath) const {
+    /* validate the state */
+    if (!HasContent()) 
+        throw std::logic_error("Parser contains no HTML content.");
+
+    /* check if the input path is not empty */
+    if (filePath.empty()) 
+        throw std::invalid_argument("File path cannot be empty.");
+    
+    /* detect whether any errors occurred */
+    const bool write_success = write_pretty_html(node.get(), filePath.c_str());
+
+    /* build a generic error message if function failed */
+    if (!write_success) {
+        throw std::runtime_error(
+            "Failed to write HTML content to '" +
+            filePath + "'.");
+    }
+}
+
 std::string HtmlParser::toString() const {
     /* quick exit for common case */
     if (!node) [[likely]]

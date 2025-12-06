@@ -295,7 +295,7 @@ static void apply_color(LaTeXConverter* converter, const char* color_value, int 
 }
 
 static void begin_table(LaTeXConverter* converter, int columns) {
-    converter->state.table_counter++;
+    converter->state.table_internal_counter++;
     converter->state.in_table = 1;
 
     converter->state.table_columns = columns;
@@ -331,7 +331,7 @@ static void end_table(LaTeXConverter* converter, const char* table_label) {
             append_string(converter, "\\caption{Table ");
 
             char counter_str[16];
-            snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_counter);
+            snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_internal_counter);
 
             append_string(converter, counter_str);
             append_string(converter, "}\n");
@@ -1302,7 +1302,6 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         else {
             /* reset CSS state before table */
             reset_css_state(converter);
-
             int columns = count_table_columns(node);
             begin_table(converter, columns);
 
@@ -1320,11 +1319,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             if (table_id && table_id[0] != '\0')
                 end_table(converter, table_id);
             else {
-                converter->state.table_id_counter++;
                 char table_label[64];
-
                 char label_counter[32];
-                html2tex_itoa(converter->state.table_id_counter, label_counter, 10);
+
+                html2tex_itoa(converter->state.table_internal_counter, 
+                    label_counter, 10);
 
                 strcpy(table_label, "table_");
                 strcpy(table_label + 6, label_counter);

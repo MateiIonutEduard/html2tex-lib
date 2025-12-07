@@ -206,28 +206,26 @@ static char* parse_text_content(ParserState* state) {
 static HTMLNode* parse_element(ParserState* state);
 
 static HTMLNode* parse_node(ParserState* state) {
-    /* don't skip whitespace at the beginning - it might be significant */
-    if (state->position >= state->length)
-        return NULL;
+    /* quick bounds check */
+    if (state->position >= state->length) return NULL;
 
+    /* element node */
     if (state->input[state->position] == '<')
         return parse_element(state);
-    else {
-        HTMLNode* node = malloc(sizeof(HTMLNode));
-        node->tag = NULL;
 
-        node->content = parse_text_content(state);
-        node->attributes = NULL;
+    /* text node */
+    HTMLNode* node = (HTMLNode*)malloc(sizeof(HTMLNode));
+    if (!node) return NULL;
 
-        node->children = NULL;
-        node->next = NULL;
+    /* initialize all fields */
+    node->tag = NULL;
+    node->content = parse_text_content(state);
+    node->attributes = NULL;
+    node->children = NULL;
+    node->next = NULL;
+    node->parent = NULL;
 
-        node->parent = NULL;
-
-        /* always return the node, even if content is only whitespace */
-        /* this is crucial for preserving spaces between elements */
-        return node;
-    }
+    return node;
 }
 
 static HTMLNode* parse_element(ParserState* state) {

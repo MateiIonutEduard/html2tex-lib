@@ -19,23 +19,36 @@ static void skip_whitespace(ParserState* state) {
 }
 
 static char* parse_tag_name(ParserState* state) {
-    size_t start = state->position;
+    const char* const input = state->input;
+    const size_t length = state->length;
 
-    while (state->position < state->length &&
-        (isalnum(state->input[state->position]) ||
-            state->input[state->position] == '-'))
-        state->position++;
+    size_t pos = state->position;
+    if (pos >= length) return NULL;
 
-    if (state->position == start) return NULL;
-    size_t length = state->position - start;
-    char* name = malloc(length + 1);
+    /* find end of tag name */
+    size_t start = pos;
 
-    strncpy(name, state->input + start, length);
-    name[length] = '\0';
+    while (pos < length) {
+        unsigned char c = (unsigned char)input[pos];
+        if (!(isalnum(c) || c == '-')) break;
+        pos++;
+    }
 
-    /* convert to lowercase for consistency */
-    for (size_t i = 0; i < length; i++)
-        name[i] = tolower(name[i]);
+    if (pos == start) return NULL;
+    size_t tag_len = pos - start;
+
+    char* name = (char*)malloc(tag_len + 1);
+    if (!name) return NULL;
+
+    /* copy and lowercase */
+    const char* src = input + start;
+    char* dest = name;
+
+    for (size_t i = 0; i < tag_len; i++)
+        dest[i] = (char)tolower((unsigned char)src[i]);
+
+    dest[tag_len] = '\0';
+    state->position = pos;
 
     return name;
 }

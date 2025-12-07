@@ -459,28 +459,42 @@ HTMLNode* dom_tree_copy(HTMLNode* node) {
 
 void html2tex_free_node(HTMLNode* node) {
     if (!node) return;
-    HTMLNode* current = node;
 
-    while (current) {
-        HTMLNode* next = current->next;
+    NodeQueue* q_front = NULL;
+    NodeQueue* q_rear = NULL;
+
+    /* BFS using queue */
+    queue_enqueue(&q_front, &q_rear, node);
+
+    while (q_front) {
+        /* process all children */
+        HTMLNode* current = queue_dequeue(&q_front, &q_rear);
+        HTMLNode* child = current->children;
+
+        while (child) {
+            HTMLNode* next_child = child->next;
+            queue_enqueue(&q_front, &q_rear, child);
+            child = next_child;
+        }
+
+        /* break parent link */
+        current->children = NULL;
+
+        /* free current node */
         if (current->tag) free(current->tag);
-
         if (current->content) free(current->content);
+
+        /* free attribute list */
         HTMLAttribute* attr = current->attributes;
 
         while (attr) {
             HTMLAttribute* next_attr = attr->next;
             free(attr->key);
 
-            if (attr->value)
-                free(attr->value);
-
-            free(attr);
-            attr = next_attr;
+            if (attr->value) free(attr->value);
+            free(attr); attr = next_attr;
         }
 
-        html2tex_free_node(current->children);
         free(current);
-        current = next;
     }
 }

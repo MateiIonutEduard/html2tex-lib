@@ -223,6 +223,10 @@ extern "C" {
 	/* Convert an integer to a null-terminated string using the given radix and store it in buffer. */
 	void portable_itoa(int value, char* buffer, int radix);
 	
+	inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data);
+	inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear);
+	inline void queue_cleanup(NodeQueue** front, NodeQueue** rear);
+	
 	#ifdef _MSC_VER
 	#define strdup portable_strdup
 	#define html2tex_itoa(value, buffer, radix) _itoa((value), (buffer), (radix))

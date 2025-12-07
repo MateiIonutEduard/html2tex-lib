@@ -7,7 +7,7 @@
 #define INITIAL_CAPACITY 1024
 #define GROWTH_FACTOR 2
 
-static inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data) {
+inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data) {
     NodeQueue* node = malloc(sizeof(NodeQueue));
     if (!node) return 0;
 
@@ -21,7 +21,7 @@ static inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* d
     return 1;
 }
 
-static inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear) {
+inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear) {
     NodeQueue* node = *front;
     if (!node) return NULL;
 
@@ -35,7 +35,7 @@ static inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear) {
     return data;
 }
 
-static inline void queue_cleanup(NodeQueue** front, NodeQueue** rear) {
+inline void queue_cleanup(NodeQueue** front, NodeQueue** rear) {
     NodeQueue* current = *front;
 
     while (current) {

@@ -120,13 +120,41 @@ static char* escape_html(const char* text) {
 static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level) {
     if (!node || !file) return;
 
-    /* create indentation */
+    /* use fixed size buffer for efficient writing */
+    static char buffer[8192];
+    static size_t buf_pos = 0;
+
+    /* helper macros used for buffered writes */
+#define FLUSH_BUFFER() \
+        if (buf_pos > 0) { \
+            fwrite(buffer, 1, buf_pos, file); \
+            buf_pos = 0; \
+        }
+
+#define CHECK_BUFFER(needed) \
+        if (buf_pos + (needed) >= sizeof(buffer)) FLUSH_BUFFER()
+
+#define BUFFER_WRITE(str, len) \
+        do { \
+            CHECK_BUFFER(len); \
+            memcpy(buffer + buf_pos, (str), (len)); \
+            buf_pos += (len); \
+        } while(0)
+
+#define BUFFER_PRINTF(fmt, ...) \
+        do { \
+            int needed = snprintf(NULL, 0, fmt, __VA_ARGS__); \
+            CHECK_BUFFER(needed + 1); \
+            buf_pos += snprintf(buffer + buf_pos, sizeof(buffer) - buf_pos, fmt, __VA_ARGS__); \
+        } while(0)
+
+    /* indentation */
     for (int i = 0; i < indent_level; i++)
-        fprintf(file, "  ");
+        BUFFER_WRITE("  ", 2);
 
     if (node->tag) {
-        /* element node */
-        fprintf(file, "<%s", node->tag);
+        /* node element */
+        BUFFER_PRINTF("<%s", node->tag);
 
         /* write attributes */
         HTMLAttribute* attr = node->attributes;
@@ -134,37 +162,56 @@ static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level) {
         while (attr) {
             if (attr->value) {
                 char* escaped_value = escape_html(attr->value);
-                fprintf(file, " %s=\"%s\"", attr->key, escaped_value ? escaped_value : attr->value);
-                if (escaped_value) free(escaped_value);
+
+                if (escaped_value) {
+                    BUFFER_PRINTF(" %s=\"%s\"", attr->key, escaped_value);
+                    free(escaped_value);
+                }
+                else
+                    BUFFER_PRINTF(" %s=\"%s\"", attr->key, attr->value);
             }
             else
-                fprintf(file, " %s", attr->key);
-
+                BUFFER_PRINTF(" %s", attr->key);
             attr = attr->next;
         }
 
-        /* check if this element should be inline */
+        /* check if inline */
         int is_inline = is_inline_element_for_formatting(node->tag);
 
-        /* check if this is a self-closing tag or has children */
+        /* check if self-closing */
         if (!node->children && !node->content)
-            fprintf(file, " />\n");
+            BUFFER_WRITE(" />\n", 4);
         else {
             /* write content if present */
-            fprintf(file, ">");
+            BUFFER_WRITE(">", 1);
 
             if (node->content) {
                 char* escaped_content = escape_html(node->content);
 
                 if (escaped_content) {
-                    fprintf(file, "%s", escaped_content);
+                    /* check if it is whitespace only */
+                    int all_whitespace = 1;
+
+                    for (char* p = escaped_content; *p; p++) {
+                        if (!isspace((unsigned char)*p)) {
+                            all_whitespace = 0;
+                            break;
+                        }
+                    }
+
+                    if (!all_whitespace)
+                        BUFFER_PRINTF("%s", escaped_content);
                     free(escaped_content);
                 }
             }
 
-            /* write children with proper indentation */
+            /* write children elements */
             if (node->children) {
-                if (!is_inline) fprintf(file, "\n");
+                if (!is_inline)
+                    BUFFER_WRITE("\n", 1);
+
+                /* flush before recursion */
+                FLUSH_BUFFER();
                 HTMLNode* child = node->children;
 
                 while (child) {
@@ -173,40 +220,48 @@ static void write_pretty_node(FILE* file, HTMLNode* node, int indent_level) {
                 }
 
                 if (!is_inline) {
+                    /* indentation required for closing tag */
                     for (int i = 0; i < indent_level; i++)
-                        fprintf(file, "  ");
+                        BUFFER_WRITE("  ", 2);
                 }
             }
 
-            fprintf(file, "</%s>\n", node->tag);
+            BUFFER_PRINTF("</%s>\n", node->tag);
         }
     }
     else {
-        /* text node */
+        /* text node element */
         if (node->content) {
             char* escaped_content = escape_html(node->content);
 
             if (escaped_content) {
-                /* check if this is mostly whitespace */
+                /* check if whitespace-only */
                 int all_whitespace = 1;
 
                 for (char* p = escaped_content; *p; p++) {
-                    if (!isspace(*p)) {
+                    if (!isspace((unsigned char)*p)) {
                         all_whitespace = 0;
                         break;
                     }
                 }
 
                 if (!all_whitespace)
-                    fprintf(file, "%s\n", escaped_content);
+                    BUFFER_PRINTF("%s\n", escaped_content);
                 else
-                    /* for whitespace-only nodes, just output a newline */
-                    fprintf(file, "\n");
-
+                    BUFFER_WRITE("\n", 1);
                 free(escaped_content);
             }
         }
     }
+
+    /* final flush if we are at the top level */
+    if (indent_level == 0)
+        FLUSH_BUFFER();
+
+#undef FLUSH_BUFFER
+#undef CHECK_BUFFER
+#undef BUFFER_WRITE
+#undef BUFFER_PRINTF
 }
 
 int write_pretty_html(HTMLNode* root, const char* filename) {
@@ -214,7 +269,7 @@ int write_pretty_html(HTMLNode* root, const char* filename) {
     FILE* file = fopen(filename, "w");
 
     if (!file) {
-        fprintf(stderr, "Error: Could not open file %s for writing\n", filename);
+        fprintf(stderr, "Error: Could not open file %s for writing.\n", filename);
         return 0;
     }
 
@@ -270,7 +325,7 @@ char* get_pretty_html(HTMLNode* root) {
     }
 
     /* allocate and read file content */
-    char* html_string = malloc(file_size + 1);
+    char* html_string = (char*)malloc(file_size + 1);
 
     if (!html_string) {
         fclose(file);

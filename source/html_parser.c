@@ -398,27 +398,27 @@ HTMLNode* html2tex_parse_minified(const char* html) {
 HTMLNode* dom_tree_copy(HTMLNode* node) {
     if (!node) return NULL;
 
-    HTMLNode* new_node = (HTMLNode*)malloc(sizeof(HTMLNode));
-    if (!new_node) return NULL;
+    /* create root copy */
+    HTMLNode* new_root = (HTMLNode*)malloc(sizeof(HTMLNode));
+    if (!new_root) return NULL;
 
-    new_node->tag = node->tag ? strdup(node->tag) : NULL;
-    new_node->content = node->content ? strdup(node->content) : NULL;
-    new_node->parent = NULL;
+    /* copy root data */
+    new_root->tag = node->tag ? strdup(node->tag) : NULL;
+    new_root->content = node->content ? strdup(node->content) : NULL;
+    new_root->parent = NULL;
+    new_root->next = NULL;
+    new_root->children = NULL;
 
-    new_node->next = NULL;
-    new_node->children = NULL;
-
-    /* copy attributes */
+    /* copy root attributes */
     HTMLAttribute* new_attrs = NULL;
-
     HTMLAttribute** current_attr = &new_attrs;
     HTMLAttribute* old_attr = node->attributes;
 
     while (old_attr) {
-        HTMLAttribute* new_attr = (HTMLAttribute*)malloc(sizeof(HTMLAttribute));
+        HTMLAttribute* new_attr = malloc(sizeof(HTMLAttribute));
 
         if (!new_attr) {
-            html2tex_free_node(new_node);
+            html2tex_free_node(new_root);
             return NULL;
         }
 
@@ -431,30 +431,87 @@ HTMLNode* dom_tree_copy(HTMLNode* node) {
         current_attr = &new_attr->next;
         old_attr = old_attr->next;
     }
+    new_root->attributes = new_attrs;
 
-    /* recursively copy children */
-    new_node->attributes = new_attrs;
-    HTMLNode* new_children = NULL;
+    /* BFS queue for copying children */
+    NodeQueue* src_queue = NULL;
+    NodeQueue* src_rear = NULL;
 
-    HTMLNode** current_child = &new_children;
-    HTMLNode* old_child = node->children;
+    NodeQueue* dst_queue = NULL;
+    NodeQueue* dst_rear = NULL;
 
-    while (old_child) {
-        HTMLNode* copied_child = dom_tree_copy(old_child);
-        if (!copied_child) {
-            html2tex_free_node(new_node);
-            return NULL;
+    /* enqueue the root and its parent copy */
+    queue_enqueue(&src_queue, &src_rear, node);
+    queue_enqueue(&dst_queue, &dst_rear, new_root);
+
+    /* process nodes in BFS order */
+    while (src_queue) {
+        HTMLNode* src_current = queue_dequeue(&src_queue, &src_rear);
+        HTMLNode* dst_current = queue_dequeue(&dst_queue, &dst_rear);
+
+        /* copy children of current node */
+        HTMLNode* src_child = src_current->children;
+        HTMLNode** dst_child_ptr = &dst_current->children;
+
+        while (src_child) {
+            /* create child copy */
+            HTMLNode* new_child = malloc(sizeof(HTMLNode));
+            if (!new_child) {
+                html2tex_free_node(new_root);
+                queue_cleanup(&src_queue, &src_rear);
+                queue_cleanup(&dst_queue, &dst_rear);
+                return NULL;
+            }
+
+            /* copy child data */
+            new_child->tag = src_child->tag ? strdup(src_child->tag) : NULL;
+            new_child->content = src_child->content ? strdup(src_child->content) : NULL;
+            new_child->parent = dst_current;
+            new_child->next = NULL;
+            new_child->children = NULL;
+
+            /* copy child attributes */
+            HTMLAttribute* child_attrs = NULL;
+            HTMLAttribute** child_attr_ptr = &child_attrs;
+            HTMLAttribute* src_child_attr = src_child->attributes;
+
+            while (src_child_attr) {
+                HTMLAttribute* new_child_attr = (HTMLAttribute*)malloc(sizeof(HTMLAttribute));
+
+                if (!new_child_attr) {
+                    html2tex_free_node(new_child);
+                    html2tex_free_node(new_root);
+                    queue_cleanup(&src_queue, &src_rear);
+                    queue_cleanup(&dst_queue, &dst_rear);
+                    return NULL;
+                }
+
+                new_child_attr->key = strdup(src_child_attr->key);
+                new_child_attr->value = src_child_attr->value ? strdup(src_child_attr->value) : NULL;
+
+                new_child_attr->next = NULL;
+                *child_attr_ptr = new_child_attr;
+
+                child_attr_ptr = &new_child_attr->next;
+                src_child_attr = src_child_attr->next;
+            }
+
+            /* link child to parent */
+            new_child->attributes = child_attrs;
+            *dst_child_ptr = new_child;
+            dst_child_ptr = &new_child->next;
+
+            /* enqueue child for further processing (its children will be copied later) */
+            queue_enqueue(&src_queue, &src_rear, src_child);
+            queue_enqueue(&dst_queue, &dst_rear, new_child);
+            src_child = src_child->next;
         }
-
-        copied_child->parent = new_node;
-        *current_child = copied_child;
-
-        current_child = &copied_child->next;
-        old_child = old_child->next;
     }
 
-    new_node->children = new_children;
-    return new_node;
+    /* cleanup queues */
+    queue_cleanup(&src_queue, &src_rear);
+    queue_cleanup(&dst_queue, &dst_rear);
+    return new_root;
 }
 
 void html2tex_free_node(HTMLNode* node) {

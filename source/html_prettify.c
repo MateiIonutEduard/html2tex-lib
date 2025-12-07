@@ -8,12 +8,31 @@
 static int is_inline_element_for_formatting(const char* tag_name) {
     if (!tag_name) return 0;
 
-    const char* inline_tags[] = {
-        "span", "a", "strong", "em", "b", "i", "u", "code",
-        "font", "mark", "small", "sub", "sup", "time", NULL
+    static const char* const inline_tags[] = {
+        "a", "abbr", "b", "bdi", "bdo", "br", "cite", "code",
+        "data", "dfn", "em", "font", "i", "kbd", "mark", "q",
+        "rp", "rt", "ruby", "samp", "small", "span", "strong",
+        "sub", "sup", "time", "u", "var", "wbr", NULL
     };
 
+    /* fast check for single-char tags */
+    if (tag_name[1] == '\0') {
+        char c = tag_name[0];
+
+        return c == 'a' || c == 'b' 
+            || c == 'i' || c == 'u' 
+            || c == 'q' || c == 's' 
+            || c == 'v';
+    }
+
+    /* optimize linear search with length check */
+    size_t len = strlen(tag_name);
+
     for (int i = 0; inline_tags[i]; i++) {
+        /* fast reject by length first */
+        if (strlen(inline_tags[i]) != len) continue;
+
+        /* compare the rest of tag name */
         if (strcmp(tag_name, inline_tags[i]) == 0)
             return 1;
     }

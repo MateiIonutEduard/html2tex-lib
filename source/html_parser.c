@@ -54,29 +54,39 @@ static char* parse_tag_name(ParserState* state) {
 }
 
 static char* parse_quoted_string(ParserState* state) {
-    if (state->position >= state->length)
-        return NULL;
+    const char* input = state->input;
+    size_t pos = state->position;
 
-    char quote = state->input[state->position];
+    /* check bounds and quote type */
+    const size_t length = state->length;
+    if (pos >= length) return NULL;
+
+    char quote = input[pos];
     if (quote != '"' && quote != '\'') return NULL;
 
     /* skip opening quote */
-    state->position++;
+    const size_t start = ++pos;
 
-    size_t start = state->position;
-    while (state->position < state->length &&
-        state->input[state->position] != quote)
-        state->position++;
+    /* scan for closing quote */
+    while (pos < length && input[pos] != quote) {
+        pos++;
+    }
 
-    if (state->position >= state->length) return NULL;
-    size_t length = state->position - start;
+    /* validate we found the quote */
+    if (pos >= length) return NULL;
 
-    char* str = malloc(length + 1);
-    strncpy(str, state->input + start, length);
+    /* allocate and copy */
+    const size_t str_len = pos - start;
+    char* str = (char*)malloc(str_len + 1);
 
-    /* skip closing quote */
-    str[length] = '\0';
-    state->position++;
+    if (str) {
+        if (str_len > 0)
+            memcpy(str, input + start, str_len);
+        
+        /* skip closing quote */
+        str[str_len] = '\0';
+        state->position = pos + 1;
+    }
 
     return str;
 }

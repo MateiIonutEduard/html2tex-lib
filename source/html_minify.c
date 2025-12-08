@@ -6,14 +6,35 @@
 
 /* Check whether a tag is safe to minify by removing surrounding whitespace. */
 static int is_safe_to_minify_tag(const char* tag_name) {
-    if (!tag_name) return 0;
+    if (!tag_name || tag_name[0] == '\0') return 0;
 
-    /* tags where whitespace is significant */
-    const char* preserve_whitespace_tags[] = {
+    /* read-only tags where whitespace is significant */
+    static const char* const preserve_whitespace_tags[] = {
         "pre", "code", "textarea", "script", "style", NULL
     };
 
+    /* compute length once, because the most tags will fail this check */
+    size_t len = 0;
+
+    const char* p = tag_name;
+    while (*p) { len++; p++; }
+
+    /* quick length-based rejection */
+    switch (len) {
+    case 3: case 4: case 5: case 6: case 8:
+        break;
+    default:
+        return 1;
+    }
+
+    /* check first character before strcmp */
+    char first_char = tag_name[0];
+
     for (int i = 0; preserve_whitespace_tags[i]; i++) {
+        /* fast rejection before expensive strcmp function call */
+        if (preserve_whitespace_tags[i][0] != first_char) continue;
+
+        /* apply strcmp function only for the few cases */
         if (strcmp(tag_name, preserve_whitespace_tags[i]) == 0)
             return 0;
     }

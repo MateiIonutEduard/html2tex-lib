@@ -275,136 +275,333 @@ static char* minify_attribute_value(const char* value) {
     return result;
 }
 
-/* Recursive minification function */
-static HTMLNode* minify_node_recursive(HTMLNode* node, int in_preformatted) {
+/* Fast minification function of HTML's DOM tree. */
+static HTMLNode* minify_node(HTMLNode* node, int in_preformatted) {
     if (!node) return NULL;
 
-    HTMLNode* new_node = malloc(sizeof(HTMLNode));
-    if (!new_node) return NULL;
+    /* precompute essential tag lookup tables */
+    static const char* const preserve_tags[] = { "pre", "code", "textarea", "script", "style", NULL };
+    static const char* const void_tags[] = { "area", "base", "br", "col", "embed", "hr", "img",
+        "input", "link", "meta", "param", "source", "track", "wbr", NULL };
+    static const char* const essential_tags[] = { "br", "hr", "img", "input", "meta", "link", NULL };
 
-    /* copy the DOM structure */
-    new_node->tag = node->tag ? strdup(node->tag) : NULL;
-    new_node->parent = NULL;
+    /* create root node */
+    HTMLNode* new_root = (HTMLNode*)calloc(1, sizeof(HTMLNode));
+    if (!new_root) return NULL;
 
-    new_node->next = NULL;
-    new_node->children = NULL;
-
-    /* handle preformatted context */
-    int current_preformatted = in_preformatted;
-
+    /* copy root data with error checking */
     if (node->tag) {
-        if (strcmp(node->tag, "pre") == 0 || strcmp(node->tag, "code") == 0 ||
-            strcmp(node->tag, "textarea") == 0 || strcmp(node->tag, "script") == 0 ||
-            strcmp(node->tag, "style") == 0)
-            current_preformatted = 1;
-    }
+        new_root->tag = strdup(node->tag);
 
-    /* minify attributes */
-    HTMLAttribute* new_attrs = NULL;
-
-    HTMLAttribute** current_attr = &new_attrs;
-    HTMLAttribute* old_attr = node->attributes;
-
-    while (old_attr) {
-        HTMLAttribute* new_attr = malloc(sizeof(HTMLAttribute));
-
-        if (!new_attr) {
-            html2tex_free_node(new_node);
+        if (!new_root->tag) {
+            free(new_root);
             return NULL;
         }
-
-        new_attr->key = strdup(old_attr->key);
-        if (old_attr->value) new_attr->value = minify_attribute_value(old_attr->value);
-        else new_attr->value = NULL;
-        
-        new_attr->next = NULL;
-        *current_attr = new_attr;
-
-        current_attr = &new_attr->next;
-        old_attr = old_attr->next;
     }
 
-    new_node->attributes = new_attrs;
+    /* minify root attributes efficiently */
+    if (node->attributes) {
+        HTMLAttribute* new_attrs = NULL;
+        HTMLAttribute** tail = &new_attrs;
+        HTMLAttribute* src_attr = node->attributes;
 
-    /* minify content */
-    if (node->content) {
-        if (is_whitespace_only(node->content) && !current_preformatted)
-            /* remove whitespace-only text nodes outside preformatted blocks */
-            new_node->content = NULL;
-        else
-            new_node->content = minify_text_content(node->content, current_preformatted);
+        while (src_attr) {
+            HTMLAttribute* new_attr = (HTMLAttribute*)malloc(sizeof(HTMLAttribute));
+            if (!new_attr) goto cleanup_root;
+            new_attr->key = strdup(src_attr->key);
+
+            if (!new_attr->key) {
+                free(new_attr);
+                goto cleanup_root;
+            }
+
+            new_attr->value = src_attr->value ?
+                minify_attribute_value(src_attr->value) : NULL;
+            new_attr->next = NULL;
+
+            *tail = new_attr;
+            tail = &new_attr->next;
+            src_attr = src_attr->next;
+        }
+
+        new_root->attributes = new_attrs;
     }
-    else new_node->content = NULL;
 
-    /* recursively minify children */
-    HTMLNode* new_children = NULL;
+    /* check if root is preformatted */
+    int root_is_preformatted = in_preformatted;
 
-    HTMLNode** current_child = &new_children;
-    HTMLNode* old_child = node->children;
+    if (node->tag) {
+        char first_char = node->tag[0];
 
-    int safe_to_minify = node->tag ? 
-        is_safe_to_minify_tag(node->tag) : 1;
-
-    while (old_child) {
-        HTMLNode* minified_child = minify_node_recursive(old_child, current_preformatted);
-
-        if (minified_child) {
-            /* remove empty text nodes between elements (except in preformatted) */
-            if (!minified_child->tag && !minified_child->content)
-                html2tex_free_node(minified_child);
-            else {
-                /* remove whitespace between block elements */
-                if (safe_to_minify && !current_preformatted) {
-                    if (minified_child->tag && is_block_element(minified_child->tag)) {
-                        /* skip whitespace before block elements */
-                        HTMLNode* next = old_child->next;
-
-                        /* skip the whitespace node */
-                        if (next && !next->tag && is_whitespace_only(next->content))
-                            old_child = next;
-                    }
+        if (first_char == 'p' || first_char == 'c' || first_char == 't' || first_char == 's') {
+            for (int i = 0; preserve_tags[i]; i++) {
+                if (strcmp(node->tag, preserve_tags[i]) == 0) {
+                    root_is_preformatted = 1;
+                    break;
                 }
+            }
+        }
+    }
 
-                minified_child->parent = new_node;
-                *current_child = minified_child;
-                current_child = &minified_child->next;
+    /* minify root content */
+    if (node->content) {
+        if (is_whitespace_only(node->content) && !root_is_preformatted)
+            new_root->content = NULL;
+        else {
+            new_root->content = minify_text_content(node->content, root_is_preformatted);
+            if (!new_root->content && node->content) goto cleanup_root;
+        }
+    }
+
+    /* check if root is void element */
+    if (node->tag) {
+        for (int i = 0; void_tags[i]; i++) {
+            if (strcmp(node->tag, void_tags[i]) == 0)
+                return new_root;
+        }
+    }
+
+    NodeQueue* src_queue_front = NULL;
+    NodeQueue* src_queue_rear = NULL;
+
+    NodeQueue* dst_queue_front = NULL;
+    NodeQueue* dst_queue_rear = NULL;
+
+    NodeQueue* preformatted_queue_front = NULL;
+    NodeQueue* preformatted_queue_rear = NULL;
+
+    /* enqueue root for processing */
+    if (!queue_enqueue(&src_queue_front, &src_queue_rear, node) ||
+        !queue_enqueue(&dst_queue_front, &dst_queue_rear, new_root) ||
+        !queue_enqueue(&preformatted_queue_front, &preformatted_queue_rear,
+            (HTMLNode*)(intptr_t)root_is_preformatted))
+        goto cleanup_all;
+
+    /* BFS processing */
+    while (src_queue_front) {
+        HTMLNode* src_current = queue_dequeue(&src_queue_front, &src_queue_rear);
+        HTMLNode* dst_current = queue_dequeue(&dst_queue_front, &dst_queue_rear);
+
+        int current_preformatted = (int)(intptr_t)queue_dequeue(&preformatted_queue_front,
+            &preformatted_queue_rear);
+
+        /* determine if current node is safe to minify */
+        if (!src_current || !dst_current) continue;
+        int current_safe_to_minify = 1;
+
+        if (src_current->tag) {
+            for (int i = 0; preserve_tags[i]; i++) {
+                if (strcmp(src_current->tag, preserve_tags[i]) == 0) {
+                    current_safe_to_minify = 0;
+                    break;
+                }
             }
         }
 
-        old_child = old_child->next;
+        /* process children with tail pointer optimization */
+        HTMLNode* src_child = src_current->children;
+        HTMLNode** dst_child_tail = &dst_current->children;
+
+        while (src_child) {
+            /* skip whitespace before block elements if safe */
+            HTMLNode* next_src_child = src_child->next;
+
+            if (current_safe_to_minify && !current_preformatted) {
+                if (src_child->tag && is_block_element(src_child->tag)) {
+                    if (next_src_child && !next_src_child->tag &&
+                        is_whitespace_only(next_src_child->content)) {
+                        src_child = next_src_child;
+                        next_src_child = src_child->next;
+                    }
+                }
+            }
+
+            /* create child node */
+            HTMLNode* new_child = (HTMLNode*)calloc(1, sizeof(HTMLNode));
+            if (!new_child) goto cleanup_all;
+
+            /* copy tag */
+            if (src_child->tag) {
+                new_child->tag = strdup(src_child->tag);
+
+                if (!new_child->tag) {
+                    free(new_child);
+                    goto cleanup_all;
+                }
+            }
+
+            /* minify attributes */
+            if (src_child->attributes) {
+                HTMLAttribute* child_attrs = NULL;
+                HTMLAttribute** attr_tail = &child_attrs;
+                HTMLAttribute* src_attr = src_child->attributes;
+
+                while (src_attr) {
+                    HTMLAttribute* new_attr = (HTMLAttribute*)malloc(sizeof(HTMLAttribute));
+
+                    if (!new_attr) {
+                        free(new_child->tag);
+                        free(new_child);
+                        goto cleanup_all;
+                    }
+
+                    new_attr->key = strdup(src_attr->key);
+
+                    if (!new_attr->key) {
+                        free(new_attr);
+                        free(new_child->tag);
+
+                        free(new_child);
+                        goto cleanup_all;
+                    }
+
+                    new_attr->value = src_attr->value ?
+                        minify_attribute_value(src_attr->value) : NULL;
+                    new_attr->next = NULL;
+
+                    *attr_tail = new_attr;
+                    attr_tail = &new_attr->next;
+                    src_attr = src_attr->next;
+                }
+                new_child->attributes = child_attrs;
+            }
+
+            /* determine child's preformatted status */
+            int child_preformatted = current_preformatted;
+
+            if (src_child->tag) {
+                for (int i = 0; preserve_tags[i]; i++) {
+                    if (strcmp(src_child->tag, preserve_tags[i]) == 0) {
+                        child_preformatted = 1;
+                        break;
+                    }
+                }
+            }
+
+            /* minify content */
+            if (src_child->content) {
+                if (is_whitespace_only(src_child->content) && !child_preformatted) {
+                    new_child->content = NULL;
+                }
+                else {
+                    new_child->content = minify_text_content(src_child->content, child_preformatted);
+                    if (!new_child->content && src_child->content) {
+                        free(new_child->tag);
+                        free(new_child);
+                        goto cleanup_all;
+                    }
+                }
+            }
+
+            /* link child to parent with tail pointer */
+            *dst_child_tail = new_child;
+            dst_child_tail = &new_child->next;
+            new_child->parent = dst_current;
+
+            /* check if child is void element */
+            int child_is_void = 0;
+
+            if (src_child->tag) {
+                for (int i = 0; void_tags[i]; i++) {
+                    if (strcmp(src_child->tag, void_tags[i]) == 0) {
+                        child_is_void = 1;
+                        break;
+                    }
+                }
+            }
+
+            /* enqueue child for processing if it has children and is not void */
+            if (!child_is_void && src_child->children) {
+                if (!queue_enqueue(&src_queue_front, &src_queue_rear, src_child) ||
+                    !queue_enqueue(&dst_queue_front, &dst_queue_rear, new_child) ||
+                    !queue_enqueue(&preformatted_queue_front, &preformatted_queue_rear,
+                        (HTMLNode*)(intptr_t)child_preformatted)) {
+                    free(new_child->tag);
+                    free(new_child);
+                    goto cleanup_all;
+                }
+            }
+
+            /* remove empty non-essential nodes immediately */
+            if (new_child->tag && !child_is_void && !new_child->children && !new_child->content) {
+                int is_essential = 0;
+
+                for (int i = 0; essential_tags[i]; i++) {
+                    if (strcmp(new_child->tag, essential_tags[i]) == 0) {
+                        is_essential = 1;
+                        break;
+                    }
+                }
+
+                if (!is_essential) {
+                    /* remove from parent's list */
+                    HTMLNode* prev = dst_current->children;
+
+                    if (prev == new_child) {
+                        dst_current->children = new_child->next;
+                        dst_child_tail = &dst_current->children;
+                    }
+                    else {
+                        while (prev && prev->next != new_child)
+                            prev = prev->next;
+                        if (prev) {
+                            prev->next = new_child->next;
+
+                            if (!new_child->next)
+                                dst_child_tail = &prev->next;
+                        }
+                    }
+
+                    html2tex_free_node(new_child);
+                }
+            }
+
+            src_child = next_src_child;
+        }
     }
 
-    new_node->children = new_children;
+    /* cleanup queues */
+    queue_cleanup(&src_queue_front, &src_queue_rear);
+    queue_cleanup(&dst_queue_front, &dst_queue_rear);
+    queue_cleanup(&preformatted_queue_front, &preformatted_queue_rear);
 
-    /* remove empty nodes (except essential ones) */
-    if (new_node->tag && !new_node->children && !new_node->content) {
-        const char* essential_tags[] = {
-            "br", "hr", "img", "input", "meta", "link", NULL
-        };
-
+    /* final check for empty non-essential root */
+    if (new_root->tag && !new_root->children && !new_root->content) {
         int is_essential = 0;
 
         for (int i = 0; essential_tags[i]; i++) {
-            if (strcmp(new_node->tag, essential_tags[i]) == 0) {
+            if (strcmp(new_root->tag, essential_tags[i]) == 0) {
                 is_essential = 1;
                 break;
             }
         }
 
         if (!is_essential) {
-            html2tex_free_node(new_node);
+            html2tex_free_node(new_root);
             return NULL;
         }
     }
 
-    return new_node;
+    return new_root;
+
+cleanup_root:
+    html2tex_free_node(new_root);
+    return NULL;
+
+cleanup_all:
+    /* cleanup everything */
+    queue_cleanup(&src_queue_front, &src_queue_rear);
+    queue_cleanup(&dst_queue_front, &dst_queue_rear);
+    queue_cleanup(&preformatted_queue_front, &preformatted_queue_rear);
+    html2tex_free_node(new_root);
+    return NULL;
 }
 
 HTMLNode* html2tex_minify_html(HTMLNode* root) {
     if (!root) return NULL;
 
     /* alloc and zero-initialize in one call */
-    HTMLNode* minified_root = calloc(1, sizeof(HTMLNode));
+    HTMLNode* minified_root = (HTMLNode*)calloc(1, sizeof(HTMLNode));
     if (!minified_root) return NULL;
 
     /* process children iteratively with error handling */
@@ -413,7 +610,7 @@ HTMLNode* html2tex_minify_html(HTMLNode* root) {
 
     while (src_child) {
         /* minify child node */
-        HTMLNode* minified_child = minify_node_recursive(src_child, 0);
+        HTMLNode* minified_child = minify_node(src_child, 0);
 
         /* check for minification failure */
         if (!minified_child) {

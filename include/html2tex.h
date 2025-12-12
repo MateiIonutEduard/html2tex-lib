@@ -218,7 +218,7 @@ extern "C" {
 	void reset_css_state(LaTeXConverter* converter);
 	
 	/* Returns a null-terminated duplicate of the string referenced by str. */
-    char* portable_strdup(const char* str);
+    char* html2tex_strdup(const char* str);
 	
 	/* Convert an integer to a null-terminated string using the given radix and store it in buffer. */
 	void portable_itoa(int value, char* buffer, int radix);
@@ -239,7 +239,7 @@ extern "C" {
 	int is_whitespace_only(const char* text);
 	
 	#ifdef _MSC_VER
-	#define strdup portable_strdup
+	#define strdup html2tex_strdup
 	#define html2tex_itoa(value, buffer, radix) _itoa((value), (buffer), (radix))
 	#else
 	#define html2tex_itoa(value, buffer, radix) portable_itoa((value), (buffer), (radix))

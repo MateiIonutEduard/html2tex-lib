@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-char* portable_strdup(const char* str) {
+char* html2tex_strdup(const char* str) {
     if (!str) return NULL;
 
     size_t len = strlen(str) + 1;
-    char* copy = malloc(len);
+    char* copy = (char*)malloc(len);
 
     if (copy)
         memcpy(copy, str, len);

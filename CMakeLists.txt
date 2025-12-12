@@ -164,6 +164,7 @@ add_library(html2tex_c STATIC
     source/html_prettify.c
     source/html2tex_css.c
     source/tex_image_utils.c
+	source/html2tex_queue_utils.c
 )
 
 # Set C library properties

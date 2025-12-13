@@ -293,44 +293,81 @@ static void end_environment(LaTeXConverter* converter, const char* env) {
 }
 
 static char* extract_color_from_style(const char* style, const char* property) {
-    if (!style || !property) return NULL;
+    if (!style || !property || !*property) return NULL;
+    const char* p = style;
 
-    char* style_copy = strdup(style);
-    char* token = strtok(style_copy, ";");
+    /* skip leading whitespace */
+    size_t prop_len = strlen(property);
 
-    while (token) {
-        while (*token == ' ') token++;
-        char* colon = strchr(token, ':');
+    while (*p) {
+        while (*p && (*p == ' ' || *p == '\t')) p++;
+        if (!*p) break;
 
-        if (colon) {
-            *colon = '\0';
-            char* prop = token;
+        /* find property end */
+        const char* prop_start = p;
+        while (*p && *p != ':' && *p != ';' && !(*p == ' ' || *p == '\t')) p++;
 
-            char* value = colon + 1;
-            while (*value == ' ') value++;
+        /* check if we have a match */
+        size_t current_prop_len = p - prop_start;
 
-            /* handle !important in CSS values */
-            char* important_pos = strstr(value, "!important");
+        if (current_prop_len == prop_len &&
+            strncmp(prop_start, property, prop_len) == 0) {
 
-            if (important_pos) {
-                /* trim trailing whitespace */
-                *important_pos = '\0';
+            /* skip to value */
+            while (*p && *p != ':') p++;
+            if (!*p) break; p++;
 
-                char* end = value + strlen(value) - 1;
-                while (end > value && isspace(*end)) *end-- = '\0';
+            /* skip whitespace before value */
+            while (*p && (*p == ' ' || *p == '\t')) p++;
+            if (!*p) break;
+
+            /* find value end */
+            const char* value_start = p;
+            const char* value_end = p;
+
+            while (*p && *p != ';') {
+                if (*p != ' ' && *p != '\t')
+                    value_end = p + 1;
+                
+                p++;
             }
 
-            if (strcmp(prop, property) == 0) {
-                char* result = strdup(value);
-                free(style_copy);
-                return result;
+            /* remove !important from value */
+            const char* important_pos = NULL;
+
+            for (const char* v = value_start; v < value_end; v++) {
+                if (v + 9 <= value_end && strncasecmp(v, "!important", 9) == 0) {
+                    important_pos = v;
+                    break;
+                }
+            }
+
+            if (important_pos) {
+                /* trim trailing whitespace after !important removal */
+                value_end = important_pos;
+                
+                while (value_end > value_start && (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                    value_end--;
+            }
+
+            /* extract the value */
+            if (value_end > value_start) {
+                size_t value_len = value_end - value_start;
+                char* result = (char*)malloc(value_len + 1);
+
+                if (result) {
+                    memcpy(result, value_start, value_len);
+                    result[value_len] = '\0';
+                    return result;
+                }
             }
         }
 
-        token = strtok(NULL, ";");
+        /* skip to the next property */
+        while (*p && *p != ';') p++;
+        if (*p == ';') p++;
     }
 
-    free(style_copy);
     return NULL;
 }
 

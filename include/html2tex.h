@@ -274,8 +274,11 @@ extern "C" {
 	
 	#ifdef _WIN32
     #define mkdir(path) _mkdir(path)
+	#define strcasecmp _stricmp
+	#define strncasecmp _strnicmp
 	#else
 	#define mkdir(path) mkdir(path, 0755)
+	#include <strings.h>
 	#endif
 
 #ifdef __cplusplus

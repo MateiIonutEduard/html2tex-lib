@@ -1,4 +1,5 @@
 #include "html2tex.h"
+#include <ctype.h>
 
 const char* get_attribute(HTMLAttribute* attrs, const char* key) {
     if (!key || key[0] == '\0') return NULL;

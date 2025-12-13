@@ -530,21 +530,60 @@ static void apply_color(LaTeXConverter* converter, const char* color_value, int 
 }
 
 static void begin_table(LaTeXConverter* converter, int columns) {
+    if (!converter) 
+        return;
+
+    if (columns <= 0) {
+        converter->error_code = 9;
+        strncpy(converter->error_message,
+            "Invalid column count for table.",
+            sizeof(converter->error_message) - 1);
+
+        return;
+    }
+
     converter->state.table_internal_counter++;
     converter->state.in_table = 1;
 
     converter->state.table_columns = columns;
     converter->state.current_column = 0;
-    converter->state.table_caption = NULL;
 
-    append_string(converter, "\\begin{table}[h]\n\\centering\n");
-    append_string(converter, "\\begin{tabular}{|");
+    /* free existing caption if any */
+    if (converter->state.table_caption) {
+        free(converter->state.table_caption);
+        converter->state.table_caption = NULL;
+    }
 
-    /* add vertical lines between columns */
-    for (int i = 0; i < columns; i++)
-        append_string(converter, "c|");
+    /* compute the required buffer size */
+    size_t header_len = strlen("\\begin{table}[h]\n\\centering\n\\begin{tabular}{|");
+    size_t column_part = (size_t)columns * 2;
 
-    append_string(converter, "}\n\\hline\n");
+    size_t footer_len = strlen("}\n\\hline\n");
+    size_t total_len = header_len + column_part + footer_len;
+
+    ensure_capacity(converter, total_len);
+    if (converter->error_code) return;
+
+    /* build the entire table header in one go */
+    char* dest = converter->output + converter->output_size;
+
+    /* copy the table header */
+    memcpy(dest, "\\begin{table}[h]\n\\centering\n\\begin{tabular}{|", header_len);
+    dest += header_len;
+
+    /* fill column specifications */
+    for (int i = 0; i < columns; i++) {
+        *dest++ = 'c';
+        *dest++ = '|';
+    }
+
+    /* copy the table footer */
+    memcpy(dest, "}\n\\hline\n", footer_len);
+    dest += footer_len;
+
+    /* update the buffer state */
+    converter->output_size += total_len;
+    *dest = '\0';
 }
 
 static void end_table(LaTeXConverter* converter, const char* table_label) {

@@ -949,98 +949,175 @@ static char* extract_caption_text(HTMLNode* node) {
 }
 
 void process_table_image(LaTeXConverter* converter, HTMLNode* img_node) {
-    char* src = get_attribute(img_node->attributes, "src");
-    if (!src) return;
+    if (!converter || !img_node) {
+        if (converter) {
+            converter->error_code = 12;
+            strncpy(converter->error_message,
+                "NULL parameters in process_table_image() function.",
+                sizeof(converter->error_message) - 1);
+        }
+
+        return;
+    }
+
+    /* get source attribute */
+    const char* src = get_attribute(img_node->attributes, "src");
+    if (!src || src[0] == '\0') return;
+
+    /* handle image download */
     char* image_path = NULL;
+    int is_downloaded_image = 0;
 
     if (converter->download_images && converter->image_output_dir) {
         converter->image_counter++;
-        image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+        image_path = download_image_src(src, converter->image_output_dir,
+            converter->image_counter);
+
+        /* check if path starts with output directory */
+        if (image_path) {
+            size_t dir_len = strlen(converter->image_output_dir);
+            is_downloaded_image = (strncmp(image_path, converter->image_output_dir,
+                dir_len) == 0);
+        }
     }
 
-    if (!image_path) image_path = strdup(src);
-    if (!image_path) return;
+    /* use original source if download failed or not enabled */
+    if (!image_path) {
+        image_path = strdup(src);
+        if (!image_path) return;
+    }
 
-    /* get dimensions and style */
+    /* parse CSS style once and reuse */
+    CSSProperties* img_css = NULL;
     int width_pt = 0, height_pt = 0;
-    char* width_attr = get_attribute(img_node->attributes, "width");
-    char* height_attr = get_attribute(img_node->attributes, "height");
-    char* style_attr = get_attribute(img_node->attributes, "style");
 
-    if (width_attr) width_pt = css_length_to_pt(width_attr);
-    if (height_attr) height_pt = css_length_to_pt(height_attr);
+    int has_background = 0;
+    char* bg_hex_color = NULL;
+    const char* style_attr = get_attribute(img_node->attributes, "style");
 
     if (style_attr) {
-        CSSProperties* img_css = parse_css_style(style_attr);
-
+        img_css = parse_css_style(style_attr);
         if (img_css) {
+            /* process dimensions from CSS first */
             if (img_css->width) width_pt = css_length_to_pt(img_css->width);
             if (img_css->height) height_pt = css_length_to_pt(img_css->height);
 
-            /* background color */
+            /* process background color */
             if (img_css->background_color) {
-                char* bg_color = css_color_to_hex(img_css->background_color);
+                bg_hex_color = css_color_to_hex(img_css->background_color);
 
-                if (bg_color && strcmp(bg_color, "FFFFFF") != 0) {
-                    append_string(converter, "\\colorbox[HTML]{");
-                    append_string(converter, bg_color);
-
-                    append_string(converter, "}{");
-                    free(bg_color);
-                }
+                if (bg_hex_color && strcmp(bg_hex_color, "FFFFFF") != 0)
+                    has_background = 1;
             }
-
-            free_css_properties(img_css);
         }
     }
 
-    /* write LaTeX graphics */
-    append_string(converter, "\\includegraphics");
+    /* fall back to width/height attributes if CSS didn't provide dimensions */
+    if (width_pt == 0) {
+        const char* width_attr = get_attribute(img_node->attributes, "width");
+        if (width_attr) width_pt = css_length_to_pt(width_attr);
+    }
+
+    if (height_pt == 0) {
+        const char* height_attr = get_attribute(img_node->attributes, "height");
+        if (height_attr) height_pt = css_length_to_pt(height_attr);
+    }
+
+    /* pre-compute buffer requirements for fixed strings */
+    size_t fixed_parts_len = 0;
+
+    /* background colorbox opening */
+    if (has_background && bg_hex_color)
+        fixed_parts_len += 24;
+
+    /* graphics command */
+    fixed_parts_len += 15;
+
+    /* options for width/height */
+    char options[64] = { 0 };
+    size_t options_len = 0;
 
     if (width_pt > 0 || height_pt > 0) {
-        append_string(converter, "[");
+        fixed_parts_len += 2;
 
         if (width_pt > 0) {
-            char width_str[16];
-            snprintf(width_str, sizeof(width_str), "width=%dmm", width_pt);
-            append_string(converter, width_str);
+            int chars = snprintf(options, sizeof(options), "width=%dpt", width_pt);
+            if (chars > 0) options_len = chars;
         }
-        if (height_pt > 0) {
-            if (width_pt > 0) append_string(converter, ", ");
-            char height_str[16];
 
-            snprintf(height_str, sizeof(height_str), "height=%dmm", height_pt);
-            append_string(converter, height_str);
+        if (height_pt > 0) {
+            if (options_len > 0) {
+                options[options_len++] = ',';
+                options[options_len++] = ' ';
+            }
+
+            int chars = snprintf(options + options_len, sizeof(options) - options_len,
+                "height=%dpt", height_pt);
+            if (chars > 0) options_len += chars;
         }
-        append_string(converter, "]");
+
+        fixed_parts_len += options_len;
     }
 
-    append_string(converter, "{");
+    /* opening and closing braces for image path */
+    fixed_parts_len += 2;
 
-    if (converter->download_images && converter->image_output_dir &&
-        strstr(image_path, converter->image_output_dir) == image_path) {
-        escape_latex_special(converter, image_path + 2);
+    /* background closing */
+    if (has_background)
+        fixed_parts_len++;
+
+    /* allocate buffer for fixed parts */
+    ensure_capacity(converter, fixed_parts_len);
+    if (converter->error_code) goto cleanup;
+
+    /* build and append fixed parts */
+    char* dest = converter->output + converter->output_size;
+
+    /* background colorbox, if any */
+    if (has_background && bg_hex_color) {
+        memcpy(dest, "\\colorbox[HTML]{", 16); dest += 16;
+        memcpy(dest, bg_hex_color, 6); dest += 6;
+        memcpy(dest, "}{", 2); dest += 2;
+    }
+
+    memcpy(dest, "\\includegraphics", 15);
+    dest += 15;
+
+    /* options, if any */
+    if (options_len > 0) {
+        *dest++ = '[';
+        memcpy(dest, options, options_len);
+
+        dest += options_len;
+        *dest++ = ']';
+    }
+
+    /* opening brace for image path */
+    *dest++ = '{';
+
+    /* update output size after fixed parts */
+    converter->output_size += (size_t)(dest - (converter->output + converter->output_size));
+
+    /* escaped image path */
+    if (is_downloaded_image) {
+        /* skip the output directory part for downloaded images */
+        size_t dir_len = strlen(converter->image_output_dir);
+
+        const char* path_to_escape = image_path + dir_len + 1;
+        escape_latex_special(converter, path_to_escape);
     }
     else
         escape_latex(converter, image_path);
     append_string(converter, "}");
 
     /* close colorbox if opened */
-    if (style_attr) {
-        CSSProperties* img_css = parse_css_style(style_attr);
-        if (img_css && img_css->background_color) {
-            char* bg_color = css_color_to_hex(img_css->background_color);
+    if (has_background)
+        append_string(converter, "}");
 
-            if (bg_color && strcmp(bg_color, "FFFFFF") != 0) {
-                append_string(converter, "}");
-                free(bg_color);
-            }
-
-            free_css_properties(img_css);
-        }
-    }
-
-    free(image_path);
+cleanup:
+    if (image_path) free(image_path);
+    if (bg_hex_color) free(bg_hex_color);
+    if (img_css) free_css_properties(img_css);
 }
 
 void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node) {

@@ -1217,7 +1217,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
     // skip CSS processing for caption nodes in tables to prevent state leakage
     if (!(converter->state.in_table && node->tag && strcmp(node->tag, "caption") == 0)) {
-        char* style_attr = get_attribute(node->attributes, "style");
+        const char* style_attr = get_attribute(node->attributes, "style");
         if (style_attr) css_props = parse_css_style(style_attr);
 
         /* apply CSS properties before element content */
@@ -1286,8 +1286,8 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     }
     else if (strcmp(node->tag, "font") == 0) {
         /* parse color attribute and style background-color */
-        char* color_attr = get_attribute(node->attributes, "color");
-        char* style_attr = get_attribute(node->attributes, "style");
+        const char* color_attr = get_attribute(node->attributes, "color");
+        const char* style_attr = get_attribute(node->attributes, "style");
         char* text_color = NULL;
 
         /* extract text color from style if present */
@@ -1313,7 +1313,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* CSS properties handle styling, just convert content */
         convert_children(converter, node);
     else if (strcmp(node->tag, "a") == 0) {
-        char* href = get_attribute(node->attributes, "href");
+        const char* href = get_attribute(node->attributes, "href");
 
         if (href) {
             append_string(converter, "\\href{");
@@ -1352,11 +1352,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* check if image is inside a table */
         if (is_inside_table(node)) {
             /* skip figure environment for images inside tables */
-            char* src = get_attribute(node->attributes, "src");
-            char* width_attr = get_attribute(node->attributes, "width");
+            const char* src = get_attribute(node->attributes, "src");
+            const char* width_attr = get_attribute(node->attributes, "width");
 
-            char* height_attr = get_attribute(node->attributes, "height");
-            char* style_attr = get_attribute(node->attributes, "style");
+            const char* height_attr = get_attribute(node->attributes, "height");
+            const char* style_attr = get_attribute(node->attributes, "style");
 
             if (src) {
                 char* image_path = NULL;
@@ -1429,12 +1429,12 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             converter->image_counter++;
             converter->state.image_internal_counter++;
 
-            char* src = get_attribute(node->attributes, "src");
-            char* alt = get_attribute(node->attributes, "alt");
-            char* width_attr = get_attribute(node->attributes, "width");
+            const char* src = get_attribute(node->attributes, "src");
+            const char* alt = get_attribute(node->attributes, "alt");
+            const char* width_attr = get_attribute(node->attributes, "width");
 
-            char* height_attr = get_attribute(node->attributes, "height");
-            char* image_id_attr = get_attribute(node->attributes, "id");
+            const char* height_attr = get_attribute(node->attributes, "height");
+            const char* image_id_attr = get_attribute(node->attributes, "id");
 
             if (src) {
                 char* image_path = NULL;
@@ -1624,7 +1624,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 /* parse CSS properties separately without affecting converter state */
                 CSSProperties* css_props = NULL;
 
-                char* style_attr = get_attribute(node->attributes, "style");
+                const char* style_attr = get_attribute(node->attributes, "style");
                 if (style_attr) css_props = parse_css_style(style_attr);
 
                 /* apply CSS formatting directly to caption without converter */
@@ -1711,7 +1711,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         int is_header = (strcmp(node->tag, "th") == 0);
 
         /* handle colspan */
-        char* colspan_attr = get_attribute(node->attributes, "colspan");
+        const char* colspan_attr = get_attribute(node->attributes, "colspan");
         int colspan = 1;
 
         if (colspan_attr) {

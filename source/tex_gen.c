@@ -102,10 +102,16 @@ void append_string(LaTeXConverter* converter, const char* str) {
     converter->output_size += len;
 }
 
+/* Append a single character to the LaTeX output buffer. */
 static void append_char(LaTeXConverter* converter, char c) {
+    if (!converter) return;
     ensure_capacity(converter, 2);
-    converter->output[converter->output_size++] = c;
-    converter->output[converter->output_size] = '\0';
+
+    if (converter->error_code) return;
+    char* dest = converter->output + converter->output_size;
+
+    *dest++ = c; *dest = '\0';
+    converter->output_size++;
 }
 
 static void escape_latex_special(LaTeXConverter* converter, const char* text)

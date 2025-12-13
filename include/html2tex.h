@@ -256,7 +256,10 @@ extern "C" {
 	/* Process an image node within table context for LaTeX generation. */
 	void process_table_image(LaTeXConverter* converter, HTMLNode* img_node);
 
+	/* Generate LaTeX figure caption for a table containing images. */
 	void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node);
+
+	/* Calculate maximum number of columns in an HTML table. */
 	int count_table_columns(HTMLNode* node);
 
 	#ifdef _MSC_VER

@@ -7,170 +7,237 @@
 #define INITIAL_CAPACITY 1024
 #define GROWTH_FACTOR 2
 
-inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data) {
-    NodeQueue* node = malloc(sizeof(NodeQueue));
-    if (!node) return 0;
-
-    node->data = data;
-    node->next = NULL;
-
-    if (*rear) (*rear)->next = node;
-    else *front = node;
-
-    *rear = node;
-    return 1;
-}
-
-inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear) {
-    NodeQueue* node = *front;
-    if (!node) return NULL;
-
-    HTMLNode* data = node->data;
-    *front = node->next;
-
-    if (!*front) 
-        *rear = NULL;
-
-    free(node);
-    return data;
-}
-
-inline void queue_cleanup(NodeQueue** front, NodeQueue** rear) {
-    NodeQueue* current = *front;
-
-    while (current) {
-        NodeQueue* next = current->next;
-        free(current);
-        current = next;
-    }
-
-    *front = *rear = NULL;
-}
-
 static void ensure_capacity(LaTeXConverter* converter, size_t needed) {
-    /* initialize to avoid uninitialized warnings */
+    /* already enough capacity */
+    if (converter->output_capacity - converter->output_size > needed)
+        return;
+
+    /* initialize if this is the first allocation */
     if (converter->output_capacity == 0) {
         converter->output_capacity = INITIAL_CAPACITY;
         converter->output = malloc(converter->output_capacity);
 
-        /* check allocation before using */
-        if (converter->output == NULL) {
-            fprintf(stderr, "Memory allocation failed\n");
-            exit(EXIT_FAILURE);
+        if (!converter->output) {
+            converter->error_code = 1;
+            strncpy(converter->error_message,
+                "Memory allocation failed.",
+                sizeof(converter->error_message) - 1);
+            return;
         }
 
-        /* now it's safe to dereference */
         converter->output[0] = '\0';
         converter->output_size = 0;
+
+        /* re-check capacity after initialization */
+        if (converter->output_capacity - converter->output_size > needed)
+            return;
     }
 
-    /* check if we need to grow */
-    if (converter->output_size + needed >= converter->output_capacity) {
-        size_t new_capacity;
+    /* compute new capacity with overflow protection */
+    size_t required = converter->output_size + needed + 1;
+    size_t new_capacity = converter->output_capacity;
 
-        /* calculate new capacity with overflow check */
-        if (converter->output_capacity > SIZE_MAX / GROWTH_FACTOR) {
-            /* overflow would occur */
-            fprintf(stderr, "Capacity overflow\n");
-            exit(EXIT_FAILURE);
+    /* exponential growth with overflow protection */
+    while (new_capacity < required) {
+        if (new_capacity > SIZE_MAX / GROWTH_FACTOR) {
+            /* overflow would occur, fall back to linear growth */
+            if (required > SIZE_MAX - new_capacity) {
+                converter->error_code = 2;
+                strncpy(converter->error_message,
+                    "Buffer capacity overflow.",
+                    sizeof(converter->error_message) - 1);
+                return;
+            }
+
+            new_capacity = required;
         }
-
-        new_capacity = converter->output_capacity * GROWTH_FACTOR;
-
-        /* ensure new capacity is sufficient for needed size */
-        if (new_capacity < converter->output_size + needed + 1)
-            new_capacity = converter->output_size + needed + 1;
-
-        /* reallocate with proper error handling */
-        void* new_output = realloc(converter->output, new_capacity);
-
-        if (new_output == NULL) {
-            /* keep original buffer intact, report error */
-            fprintf(stderr, "Memory reallocation failed (needed %zu bytes)\n", new_capacity);
-            exit(EXIT_FAILURE);
-        }
-
-        /* only assign after successful reallocation */
-        converter->output = new_output;
-        converter->output_capacity = new_capacity;
+        else
+            new_capacity *= GROWTH_FACTOR;
     }
 
-    /* safety check - this should help the analyzer understand output is valid */
-    if (converter->output == NULL) {
-        fprintf(stderr, "Unexpected NULL pointer\n");
-        exit(EXIT_FAILURE);
+    /* ensure new capacity is sufficient */
+    if (new_capacity < required)
+        new_capacity = required;
+
+    /* reallocate the memory */
+    void* new_output = realloc(converter->output, new_capacity);
+
+    if (!new_output) {
+        /* keep old buffer intact for possible recovery */
+        converter->error_code = 3;
+
+        strncpy(converter->error_message,
+            "Memory reallocation failed.",
+            sizeof(converter->error_message) - 1);
+        return;
     }
+
+    converter->output = new_output;
+    converter->output_capacity = new_capacity;
 }
 
 void append_string(LaTeXConverter* converter, const char* str) {
-    size_t len = strlen(str);
-    ensure_capacity(converter, len + 1);
+    if (!converter || !str) {
+        if (converter) {
+            converter->error_code = 4;
+            strncpy(converter->error_message,
+                "NULL parameter to append_string() function.",
+                sizeof(converter->error_message) - 1);
+        }
 
-    strcat(converter->output, str);
+        return;
+    }
+
+    size_t len = strlen(str);
+    if (len == 0) return;
+
+    ensure_capacity(converter, len + 1);
+    if (converter->error_code) return;
+
+    /* direct memory copy to the current position */
+    char* dest = converter->output + converter->output_size;
+    memcpy(dest, str, len);
+
+    dest[len] = '\0';
     converter->output_size += len;
 }
 
+/* Append a single character to the LaTeX output buffer. */
 static void append_char(LaTeXConverter* converter, char c) {
+    if (!converter) return;
     ensure_capacity(converter, 2);
-    converter->output[converter->output_size++] = c;
-    converter->output[converter->output_size] = '\0';
+
+    if (converter->error_code) return;
+    char* dest = converter->output + converter->output_size;
+
+    *dest++ = c; *dest = '\0';
+    converter->output_size++;
 }
 
-static char* get_attribute(HTMLAttribute* attrs, const char* key) {
-    HTMLAttribute* current = attrs;
+static void escape_latex_special(LaTeXConverter* converter, const char* text) {
+    if (!text || !converter) return;
 
-    while (current) {
-        if (strcmp(current->key, key) == 0)
-            return current->value;
+    /* lookup table for LaTeX special characters */
+    static const unsigned char SPECIAL_SP[256] = {
+        ['{'] = 1,['}'] = 2,['&'] = 3,['%'] = 4,
+        ['$'] = 5,['#'] = 6,['^'] = 7,['~'] = 8,
+        ['<'] = 9,['>'] = 10,['\n'] = 11
+    };
 
-        current = current->next;
+    static const char* const ESCAPED_SP[] = {
+        NULL, "\\{", "\\}", "\\&", "\\%", "\\$", 
+        "\\#", "\\^{}", "\\~{}", "\\textless{}", 
+        "\\textgreater{}", "\\\\"
+    };
+
+    const char* p = text;
+    const char* start = p;
+
+    while (*p) {
+        unsigned char c = (unsigned char)*p;
+        unsigned char type = SPECIAL_SP[c];
+
+        if (type == 0) {
+            p++;
+            continue;
+        }
+
+        if (p > start) {
+            /* copy normal characters before special */
+            size_t normal_len = p - start;
+
+            ensure_capacity(converter, normal_len);
+            if (converter->error_code) return;
+
+            char* dest = converter->output + converter->output_size;
+            memcpy(dest, start, normal_len);
+
+            converter->output_size += normal_len;
+            converter->output[converter->output_size] = '\0';
+        }
+
+        /* append the escaped sequence */
+        append_string(converter, ESCAPED_SP[type]);
+        if (converter->error_code) return;
+        p++; start = p;
     }
 
-    return NULL;
-}
+    if (p > start) {
+        /* copy remaining normal characters */
+        size_t remaining_len = p - start;
 
-static void escape_latex_special(LaTeXConverter* converter, const char* text)
-{
-    if (!text) return;
+        ensure_capacity(converter, remaining_len);
+        if (converter->error_code) return;
 
-    for (const char* p = text; *p; p++) {
-        switch (*p) {
-        case '{': append_string(converter, "\\{"); break;
-        case '}': append_string(converter, "\\}"); break;
-        case '&': append_string(converter, "\\&"); break;
-        case '%': append_string(converter, "\\%"); break;
-        case '$': append_string(converter, "\\$"); break;
-        case '#': append_string(converter, "\\#"); break;
-        case '^': append_string(converter, "\\^{}"); break;
-        case '~': append_string(converter, "\\~{}"); break;
-        case '<': append_string(converter, "\\textless{}"); break;
-        case '>': append_string(converter, "\\textgreater{}"); break;
-        case '\n': append_string(converter, "\\\\"); break;
-        default: append_char(converter, *p); break;
-        }
+        char* dest = converter->output + converter->output_size;
+        memcpy(dest, start, remaining_len);
+
+        converter->output_size += remaining_len;
+        converter->output[converter->output_size] = '\0';
     }
 }
 
 static void escape_latex(LaTeXConverter* converter, const char* text) {
-    if (!text) return;
+    if (!text || !converter) return;
 
-    for (const char* p = text; *p; p++) {
-        switch (*p) {
-        case '\\': append_string(converter, "\\textbackslash{}"); break;
-        case '{': append_string(converter, "\\{"); break;
-        case '}': append_string(converter, "\\}"); break;
-        case '&': append_string(converter, "\\&"); break;
-        case '%': append_string(converter, "\\%"); break;
-        case '$': append_string(converter, "\\$"); break;
-        case '#': append_string(converter, "\\#"); break;
-        case '_': append_string(converter, "\\_"); break;
-        case '^': append_string(converter, "\\^{}"); break;
-        case '~': append_string(converter, "\\~{}"); break;
-        case '<': append_string(converter, "\\textless{}"); break;
-        case '>': append_string(converter, "\\textgreater{}"); break;
-        case '\n': append_string(converter, "\\\\"); break;
-        default: append_char(converter, *p); break;
+    /* lookup tables for LaTeX special characters */
+    static const unsigned char key[256] = {
+        ['\\'] = 1,['{'] = 2,['}'] = 3,['&'] = 4,
+        ['%'] = 5,['$'] = 6,['#'] = 7,['_'] = 8,
+        ['^'] = 9,['~'] = 10,['<'] = 11,['>'] = 12,
+        ['\n'] = 13
+    };
+
+    static const char* const value[] = {
+        NULL, "\\textbackslash{}", "\\{", "\\}", "\\&",
+        "\\%", "\\$", "\\#", "\\_", "\\^{}", "\\~{}", 
+        "\\textless{}", "\\textgreater{}", "\\\\"
+    };
+
+    const char* p = text;
+    const char* start = p;
+
+    while (*p) {
+        unsigned char c = (unsigned char)*p;
+        unsigned char type = key[c];
+
+        if (type == 0) {
+            p++;
+            continue;
         }
+
+        if (p > start) {
+            /* copy normal characters before special */
+            size_t normal_len = p - start;
+
+            ensure_capacity(converter, normal_len);
+            if (converter->error_code) return;
+
+            char* dest = converter->output + converter->output_size;
+            memcpy(dest, start, normal_len);
+
+            converter->output_size += normal_len;
+            converter->output[converter->output_size] = '\0';
+        }
+
+        /* append escaped sequence */
+        append_string(converter, value[type]);
+        if (converter->error_code) return;
+        p++; start = p;
+    }
+
+    if (p > start) {
+        /* copy remaining normal characters */
+        size_t remaining_len = p - start;
+
+        ensure_capacity(converter, remaining_len);
+        if (converter->error_code) return;
+
+        char* dest = converter->output + converter->output_size;
+        memcpy(dest, start, remaining_len);
+
+        converter->output_size += remaining_len;
+        converter->output[converter->output_size] = '\0';
     }
 }
 
@@ -186,177 +253,465 @@ void convert_children(LaTeXConverter* converter, HTMLNode* node) {
 }
 
 static void begin_environment(LaTeXConverter* converter, const char* env) {
+    if (!converter || !env) {
+        if (converter) {
+            converter->error_code = 5;
+            strncpy(converter->error_message,
+                "NULL parameter to begin_environment() function.",
+                sizeof(converter->error_message) - 1);
+        }
+
+        return;
+    }
+
     append_string(converter, "\\begin{");
+    if (converter->error_code) return;
+
     append_string(converter, env);
+    if (converter->error_code) return;
     append_string(converter, "}\n");
 }
 
 static void end_environment(LaTeXConverter* converter, const char* env) {
+    if (!converter || !env) {
+        if (converter) {
+            converter->error_code = 6;
+            strncpy(converter->error_message,
+                "NULL parameter to end_environment() function.",
+                sizeof(converter->error_message) - 1);
+        }
+
+        return;
+    }
+
     append_string(converter, "\\end{");
+    if (converter->error_code) return;
+
     append_string(converter, env);
+    if (converter->error_code) return;
     append_string(converter, "}\n");
 }
 
 static char* extract_color_from_style(const char* style, const char* property) {
-    if (!style || !property) return NULL;
+    if (!style || !property || !*property) return NULL;
+    const char* p = style;
 
-    char* style_copy = strdup(style);
-    char* token = strtok(style_copy, ";");
+    /* skip leading whitespace */
+    size_t prop_len = strlen(property);
 
-    while (token) {
-        while (*token == ' ') token++;
-        char* colon = strchr(token, ':');
+    while (*p) {
+        while (*p && (*p == ' ' || *p == '\t')) p++;
+        if (!*p) break;
 
-        if (colon) {
-            *colon = '\0';
-            char* prop = token;
+        /* find property end */
+        const char* prop_start = p;
+        while (*p && *p != ':' && *p != ';' && !(*p == ' ' || *p == '\t')) p++;
 
-            char* value = colon + 1;
-            while (*value == ' ') value++;
+        /* check if we have a match */
+        size_t current_prop_len = p - prop_start;
 
-            /* handle !important in CSS values */
-            char* important_pos = strstr(value, "!important");
+        if (current_prop_len == prop_len &&
+            strncmp(prop_start, property, prop_len) == 0) {
 
-            if (important_pos) {
-                /* trim trailing whitespace */
-                *important_pos = '\0';
+            /* skip to value */
+            while (*p && *p != ':') p++;
+            if (!*p) break; p++;
 
-                char* end = value + strlen(value) - 1;
-                while (end > value && isspace(*end)) *end-- = '\0';
+            /* skip whitespace before value */
+            while (*p && (*p == ' ' || *p == '\t')) p++;
+            if (!*p) break;
+
+            /* find value end */
+            const char* value_start = p;
+            const char* value_end = p;
+
+            while (*p && *p != ';') {
+                if (*p != ' ' && *p != '\t')
+                    value_end = p + 1;
+                
+                p++;
             }
 
-            if (strcmp(prop, property) == 0) {
-                char* result = strdup(value);
-                free(style_copy);
-                return result;
+            /* remove !important from value */
+            const char* important_pos = NULL;
+
+            for (const char* v = value_start; v < value_end; v++) {
+                if (v + 9 <= value_end && strncasecmp(v, "!important", 9) == 0) {
+                    important_pos = v;
+                    break;
+                }
+            }
+
+            if (important_pos) {
+                /* trim trailing whitespace after !important removal */
+                value_end = important_pos;
+                
+                while (value_end > value_start && (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                    value_end--;
+            }
+
+            /* extract the value */
+            if (value_end > value_start) {
+                size_t value_len = value_end - value_start;
+                char* result = (char*)malloc(value_len + 1);
+
+                if (result) {
+                    memcpy(result, value_start, value_len);
+                    result[value_len] = '\0';
+                    return result;
+                }
             }
         }
 
-        token = strtok(NULL, ";");
+        /* skip to the next property */
+        while (*p && *p != ';') p++;
+        if (*p == ';') p++;
     }
 
-    free(style_copy);
     return NULL;
 }
 
 static char* color_to_hex(const char* color_value) {
-    if (!color_value) return NULL;
-    char* result = NULL;
+    if (!color_value || !*color_value) return NULL;
 
-    if (color_value[0] == '#')
-        result = strdup(color_value + 1);
-    else if (strncmp(color_value, "rgb(", 4) == 0) {
-        int r, g, b;
+    /* check first character quickly */
+    char first_char = color_value[0];
 
-        if (sscanf(color_value, "rgb(%d, %d, %d)", &r, &g, &b) == 3) {
-            result = malloc(7);
-            snprintf(result, 7, "%02X%02X%02X", r, g, b);
+    /* #RRGGBB or #RGB format */
+    if (first_char == '#') {
+        const char* hex_start = color_value + 1;
+        size_t hex_len = strlen(hex_start);
+
+        /* validate hex length */
+        if (hex_len != 3 && hex_len != 6) return NULL;
+
+        /* validate hex characters */
+        for (size_t i = 0; i < hex_len; i++) {
+            char c = hex_start[i];
+
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                (c >= 'A' && c <= 'F')))
+                return NULL;
         }
-    }
-    else if (strncmp(color_value, "rgba(", 5) == 0) {
-        int r, g, b;
-        float a;
 
-        if (sscanf(color_value, "rgba(%d, %d, %d, %f)", &r, &g, &b, &a) == 4) {
-            result = malloc(7);
-            snprintf(result, 7, "%02X%02X%02X", r, g, b);
+        char* result = (char*)malloc(7);
+        if (!result) return NULL;
+
+        if (hex_len == 3) {
+            /* expand #RGB to #RRGGBB */
+            snprintf(result, 7, "%c%c%c%c%c%c",
+                hex_start[0], hex_start[0],
+                hex_start[1], hex_start[1],
+                hex_start[2], hex_start[2]);
         }
-    }
-    else
-        result = strdup(color_value);
+        else {
+            /* #RRGGBB format */
+            memcpy(result, hex_start, 6);
+            result[6] = '\0';
+        }
 
-    if (result) {
-        for (char* p = result; *p; p++)
-            *p = toupper(*p);
+        /* convert to uppercase during copy to avoid second pass */
+        for (size_t i = 0; i < 6; i++)
+            result[i] = toupper((unsigned char)result[i]);
+
+        return result;
     }
 
-    return result;
+    /* RGB/RGBA format */
+    if (first_char == 'r') {
+        /* Quick check for "rgb(" or "rgba(" */
+        if (strncmp(color_value, "rgb(", 4) == 0) {
+            int r, g, b;
+            if (sscanf(color_value, "rgb(%d, %d, %d)", &r, &g, &b) == 3 &&
+                r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255) {
+                char* result = malloc(7);
+                if (result) {
+                    snprintf(result, 7, "%02X%02X%02X", r, g, b);
+                }
+                return result;
+            }
+        }
+        else if (strncmp(color_value, "rgba(", 5) == 0) {
+            int r, g, b;
+            float a;
+            if (sscanf(color_value, "rgba(%d, %d, %d, %f)", &r, &g, &b, &a) == 4 &&
+                r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255) {
+                char* result = malloc(7);
+                if (result) {
+                    snprintf(result, 7, "%02X%02X%02X", r, g, b);
+                }
+                return result;
+            }
+        }
+        return NULL;
+    }
+
+    /* named colors lookup table for commonly CSS colors */
+    static const struct {
+        const char* name;
+        const char* hex;
+    } named_colors[] = {
+        {"black", "000000"}, {"white", "FFFFFF"},
+        {"red", "FF0000"}, {"green", "008000"}, {"blue", "0000FF"},
+        {"yellow", "FFFF00"}, {"cyan", "00FFFF"}, {"magenta", "FF00FF"},
+        {"gray", "808080"}, {"grey", "808080"}, {"silver", "C0C0C0"},
+        {"maroon", "800000"}, {"olive", "808000"}, {"lime", "00FF00"},
+        {"aqua", "00FFFF"}, {"teal", "008080"}, {"navy", "000080"},
+        {"fuchsia", "FF00FF"}, {"purple", "800080"}, {"orange", "FFA500"},
+        {"transparent", "000000"}, {NULL, NULL}
+    };
+
+    /* case-insensitive lookup for named colors */
+    for (int i = 0; named_colors[i].name; i++) {
+        if (strcasecmp(color_value, named_colors[i].name) == 0)
+            return strdup(named_colors[i].hex);
+    }
+
+    /* unknown format, return NULL for safety */
+    return NULL;
 }
 
 /* Handle color application with proper nesting. */
 static void apply_color(LaTeXConverter* converter, const char* color_value, int is_background) {
-    if (!color_value) return;
+    if (!converter || !color_value) {
+        if (converter) {
+            converter->error_code = 7;
+            strncpy(converter->error_message,
+                "NULL parameter to apply_color() function.",
+                sizeof(converter->error_message) - 1);
+        }
+
+        return;
+    }
 
     char* hex_color = color_to_hex(color_value);
-    if (!hex_color) return;
+
+    if (!hex_color) {
+        converter->error_code = 8;
+        strncpy(converter->error_message,
+            "Failed to convert color to hex",
+            sizeof(converter->error_message) - 1);
+
+        return;
+    }
+
+    /* pre-allocate buffer for the entire command to reduce function calls */
+    size_t prefix_len = is_background ? 17 : 16;
+    size_t hex_len = strlen(hex_color);
+
+    size_t suffix_len = 2;
+    size_t total_len = prefix_len + hex_len + suffix_len;
+    ensure_capacity(converter, total_len);
+
+    if (converter->error_code) {
+        free(hex_color);
+        return;
+    }
+
+    char* dest = converter->output + converter->output_size;
 
     if (is_background) {
-        append_string(converter, "\\colorbox[HTML]{");
-        append_string(converter, hex_color);
-        append_string(converter, "}{");
+        memcpy(dest, "\\colorbox[HTML]{", 16);
+        dest += 16;
     }
     else {
-        append_string(converter, "\\textcolor[HTML]{");
-        append_string(converter, hex_color);
-        append_string(converter, "}{");
+        memcpy(dest, "\\textcolor[HTML]{", 17);
+        dest += 17;
     }
 
-    free(hex_color);
+    memcpy(dest, hex_color, hex_len);
+    dest += hex_len;
+
+    memcpy(dest, "}{", 2);
+    dest += 2;
+
+    converter->output_size += total_len;
+    *dest = '\0'; free(hex_color);
 }
 
 static void begin_table(LaTeXConverter* converter, int columns) {
+    if (!converter) 
+        return;
+
+    if (columns <= 0) {
+        converter->error_code = 9;
+        strncpy(converter->error_message,
+            "Invalid column count for table.",
+            sizeof(converter->error_message) - 1);
+
+        return;
+    }
+
     converter->state.table_internal_counter++;
     converter->state.in_table = 1;
 
     converter->state.table_columns = columns;
     converter->state.current_column = 0;
-    converter->state.table_caption = NULL;
 
-    append_string(converter, "\\begin{table}[h]\n\\centering\n");
-    append_string(converter, "\\begin{tabular}{|");
+    /* free existing caption if any */
+    if (converter->state.table_caption) {
+        free(converter->state.table_caption);
+        converter->state.table_caption = NULL;
+    }
 
-    /* add vertical lines between columns */
-    for (int i = 0; i < columns; i++)
-        append_string(converter, "c|");
+    /* compute the required buffer size */
+    size_t header_len = strlen("\\begin{table}[h]\n\\centering\n\\begin{tabular}{|");
+    size_t column_part = (size_t)columns * 2;
 
-    append_string(converter, "}\n\\hline\n");
+    size_t footer_len = strlen("}\n\\hline\n");
+    size_t total_len = header_len + column_part + footer_len;
+
+    ensure_capacity(converter, total_len);
+    if (converter->error_code) return;
+
+    /* build the entire table header in one go */
+    char* dest = converter->output + converter->output_size;
+
+    /* copy the table header */
+    memcpy(dest, "\\begin{table}[h]\n\\centering\n\\begin{tabular}{|", header_len);
+    dest += header_len;
+
+    /* fill column specifications */
+    for (int i = 0; i < columns; i++) {
+        *dest++ = 'c';
+        *dest++ = '|';
+    }
+
+    /* copy the table footer */
+    memcpy(dest, "}\n\\hline\n", footer_len);
+    dest += footer_len;
+
+    /* update the buffer state */
+    converter->output_size += total_len;
+    *dest = '\0';
 }
 
 static void end_table(LaTeXConverter* converter, const char* table_label) {
-    if (converter->state.in_table) {
-        append_string(converter, "\\end{tabular}\n");
+    if (!converter) {
+        fprintf(stderr, "Error: NULL converter in end_table() function.\n");
+        return;
+    }
 
+    /* quick exit if not in table */
+    if (!converter->state.in_table) {
+        converter->state.in_table = 0;
+        converter->state.in_table_row = 0;
+
+        converter->state.in_table_cell = 0;
+        return;
+    }
+
+    /* build table end string efficiently*/
+    const char* tabular_end = "\\end{tabular}\n";
+    const char* table_end = "\\end{table}\n\n";
+
+    /* pre-compute lengths for optimal memcpy usage */
+    size_t total_len = 0;
+    total_len += 14;
+
+    char default_caption[32];
+    const char* caption_text = NULL;
+    size_t caption_len = 0;
+
+    if (converter->state.table_caption) {
+        caption_text = converter->state.table_caption;
+        caption_len = strlen(caption_text);
+        total_len += 9 + caption_len + 2;
+    }
+    else {
+        snprintf(default_caption, sizeof(default_caption), "Table %d",
+            converter->state.table_internal_counter);
+        caption_text = default_caption;
+
+        caption_len = strlen(caption_text);
+        total_len += 9 + caption_len + 2;
+    }
+
+    size_t label_len = 0;
+    const char* label_text = NULL;
+
+    if (table_label && table_label[0] != '\0') {
+        label_text = table_label;
+        label_len = strlen(label_text);
+        total_len += 11 + label_len + 2;
+    }
+
+    total_len += 13;
+
+    /* ensure capacity */
+    ensure_capacity(converter, total_len);
+
+    if (converter->error_code) {
+        /* clean up on error */
         if (converter->state.table_caption) {
-            /* output the pre-formatted caption without escaping */
-            append_string(converter, "\\caption{");
-
-            append_string(converter, converter->state.table_caption);
-            append_string(converter, "}\n");
-
             free(converter->state.table_caption);
             converter->state.table_caption = NULL;
         }
-        else {
-            /* fallback to default caption */
-            append_string(converter, "\\caption{Table ");
 
-            char counter_str[16];
-            snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_internal_counter);
-
-            append_string(converter, counter_str);
-            append_string(converter, "}\n");
-        }
-
-        if (table_label) {
-            append_string(converter, "\\label{tab:");
-            escape_latex_special(converter, table_label);
-            append_string(converter, "}\n");
-        }
-
-        append_string(converter, "\\end{table}\n\n");
+        return;
     }
 
+    /* build complete output in one pass with memcpy() call */
+    char* dest = converter->output + converter->output_size;
+    memcpy(dest, tabular_end, 14);
+    dest += 14;
+
+    memcpy(dest, "\\caption{", 9);
+    dest += 9;
+
+    if (caption_len > 0) {
+        memcpy(dest, caption_text, caption_len);
+        dest += caption_len;
+    }
+
+    memcpy(dest, "}\n", 2);
+    dest += 2;
+
+    if (label_text && label_len > 0) {
+        memcpy(dest, "\\label{tab:", 11);
+        dest += 11;
+
+        memcpy(dest, label_text, label_len);
+        dest += label_len;
+
+        memcpy(dest, "}\n", 2);
+        dest += 2;
+    }
+
+    memcpy(dest, table_end, 13);
+    dest += 13;
+
+    /* update output size */
+    converter->output_size += total_len;
+
+    /* clean up resources */
+    if (converter->state.table_caption) {
+        free(converter->state.table_caption);
+        converter->state.table_caption = NULL;
+    }
+
+    /* reset the converter state */
     converter->state.in_table = 0;
     converter->state.in_table_row = 0;
     converter->state.in_table_cell = 0;
 }
 
 static void begin_table_row(LaTeXConverter* converter) {
+    if (!converter) {
+        fprintf(stderr, "Error: NULL converter in begin_table_row() function.\n");
+        return;
+    }
+
     converter->state.in_table_row = 1;
     converter->state.current_column = 0;
 }
 
 static void end_table_row(LaTeXConverter* converter) {
+    if (!converter) {
+        fprintf(stderr, "Error: NULL converter in end_table_row() function.\n");
+        return;
+    }
+
     if (converter->state.in_table_row) {
         append_string(converter, " \\\\ \\hline\n");
         converter->state.in_table_row = 0;
@@ -364,6 +719,11 @@ static void end_table_row(LaTeXConverter* converter) {
 }
 
 static void begin_table_cell(LaTeXConverter* converter, int is_header) {
+    if (!converter) {
+        fprintf(stderr, "Error: NULL converter in begin_table_cell() function.\n");
+        return;
+    }
+
     converter->state.in_table_cell = 1;
     converter->state.current_column++;
 
@@ -375,546 +735,462 @@ static void begin_table_cell(LaTeXConverter* converter, int is_header) {
 }
 
 static void end_table_cell(LaTeXConverter* converter, int is_header) {
+    if (!converter) {
+        fprintf(stderr, "Error: NULL converter in end_table_cell() function.\n");
+        return;
+    }
+
     if (is_header)
         append_string(converter, "}");
 
     converter->state.in_table_cell = 0;
 }
 
-static int count_table_columns(HTMLNode* node) {
+int count_table_columns(HTMLNode* node) {
+    /* validate input */
     if (!node) return 1;
     int max_columns = 0;
 
-    /* look through all direct children to find rows */
-    HTMLNode* child = node->children;
+    NodeQueue* front = NULL;
+    NodeQueue* rear = NULL;
 
-    while (child) {
-        if (child->tag) {
-            if (child->tag) {
-                /* skip caption elements when counting columns */
-                if (strcmp(child->tag, "caption") == 0) {
-                    child = child->next;
-                    continue;
-                }
+    /* initialize BFS queue with the node */
+    if (!queue_enqueue(&front, &rear, node))
+        return 1;
+
+    /* BFS traversal for table structure */
+    while (front) {
+        HTMLNode* current = queue_dequeue(&front, &rear);
+        if (!current) continue;
+
+        /* process all children of current node */
+        HTMLNode* child = current->children;
+
+        while (child) {
+            /* skip non-tag nodes */
+            if (!child->tag) {
+                child = child->next;
+                continue;
             }
 
-            if (strcmp(child->tag, "tr") == 0) {
-                /* this is a row - count its cells */
+            /* fast tag identification using first char */
+            char first_char = child->tag[0];
+
+            /* skip caption elements immediately */
+            if (first_char == 'c' && strcmp(child->tag, "caption") == 0) {
+                child = child->next;
+                continue;
+            }
+
+            /* check for row element */
+            if (first_char == 't' && strcmp(child->tag, "tr") == 0) {
                 int row_columns = 0;
                 HTMLNode* cell = child->children;
 
+                /* count cells in this row with colspan support */
                 while (cell) {
-                    if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
-                        char* colspan_attr = get_attribute(cell->attributes, "colspan");
-                        int colspan = 1;
+                    if (cell->tag) {
+                        char cell_first_char = cell->tag[0];
 
-                        if (colspan_attr) {
-                            colspan = atoi(colspan_attr);
-                            if (colspan < 1) colspan = 1;
+                        /* check for td or th with single comparison */
+                        if ((cell_first_char == 't' && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0))) {
+                            int colspan = 1;
+
+                            /* check for colspan attribute */
+                            const char* colspan_attr = get_attribute(cell->attributes, "colspan");
+
+                            /* robust conversion with error checking */
+                            if (colspan_attr && colspan_attr[0]) {
+                                char* endptr = NULL;
+                                long colspan_val = strtol(colspan_attr, &endptr, 10);
+
+                                /* validate conversion result */
+                                if (endptr != colspan_attr && *endptr == '\0' &&
+                                    colspan_val > 0 && colspan_val <= 1000) {
+                                    colspan = (int)colspan_val;
+                                }
+                                /* handle negative or invalid values safely */
+                                else if (colspan_val < 1)
+                                    colspan = 1;
+                            }
+
+                            /* safe addition with overflow protection */
+                            if (row_columns <= INT_MAX - colspan)
+                                row_columns += colspan;
+                            else
+                                /* handle overflow */
+                                row_columns = INT_MAX;
                         }
-
-                        row_columns += colspan;
                     }
 
                     cell = cell->next;
                 }
 
+                /* update maximum columns found */
                 if (row_columns > max_columns)
                     max_columns = row_columns;
             }
-            else if (strcmp(child->tag, "thead") == 0 || strcmp(child->tag, "tbody") == 0 || strcmp(child->tag, "tfoot") == 0) {
-                /* recursively count columns in table sections */
-                int section_columns = count_table_columns(child);
+            /* handle table sections with BFS */
+            else if (first_char == 't' || first_char == 'h' || first_char == 'f') {
+                if (strcmp(child->tag, "thead") == 0 ||
+                    strcmp(child->tag, "tbody") == 0 ||
+                    strcmp(child->tag, "tfoot") == 0) {
 
-                if (section_columns > max_columns)
-                    max_columns = section_columns;
+                    /* enqueue section for processing */
+                    if (!queue_enqueue(&front, &rear, child)) {
+                        queue_cleanup(&front, &rear);
+                        return max_columns > 0 ? max_columns : 1;
+                    }
+                }
             }
-        }
+            /* handle direct table children that might contain rows */
+            else if (first_char == 't' && strcmp(child->tag, "table") == 0) {
+                /* Nested table, process it independently */
+                int nested_columns = count_table_columns(child);
 
-        child = child->next;
+                if (nested_columns > max_columns)
+                    max_columns = nested_columns;
+            }
+
+            child = child->next;
+        }
     }
 
+    /* cleanup queue */
+    queue_cleanup(&front, &rear);
+
+    /* return at least 1 column for valid tables */
     return max_columns > 0 ? max_columns : 1;
 }
 
-/* new function to extract caption text */
+/* Returns the extracted caption text. */
 static char* extract_caption_text(HTMLNode* node) {
     if (!node) return NULL;
-    size_t buffer_size = 256;
 
-    char* buffer = malloc(buffer_size);
+    /* use a simple dynamic string */
+    size_t capacity = 256;
+    char* buffer = (char*)malloc(capacity);
+
     if (!buffer) return NULL;
-
+    size_t length = 0;
     buffer[0] = '\0';
-    size_t current_length = 0;
 
-    /* process the current node and its children, but not siblings */
-    if (!node->tag && node->content) {
-        /* this is a text node */
-        size_t content_len = strlen(node->content);
+    /* use a stack for DFS */
+    HTMLNode* stack[256];
+    int stack_top = -1;
+    stack[++stack_top] = node;
 
-        if (current_length + content_len + 1 > buffer_size) {
-            buffer_size = (current_length + content_len + 1) * 2;
-            char* new_buffer = realloc(buffer, buffer_size);
+    while (stack_top >= 0) {
+        HTMLNode* current = stack[stack_top--];
 
-            if (!new_buffer) {
-                free(buffer);
-                return NULL;
-            }
+        /* if it's a text node, append its content */
+        if (!current->tag && current->content) {
+            const char* text = current->content;
+            size_t text_len = strlen(text);
 
-            buffer = new_buffer;
-        }
-
-        strcat(buffer, node->content);
-        current_length += content_len;
-    }
-
-    /* process children recursively */
-    if (node->children) {
-        char* child_text = extract_caption_text(node->children);
-
-        if (child_text) {
-            size_t child_len = strlen(child_text);
-
-            if (current_length + child_len + 1 > buffer_size) {
-                buffer_size = (current_length + child_len + 1) * 2;
-                char* new_buffer = realloc(buffer, buffer_size);
+            /* check if we need to grow the buffer */
+            if (length + text_len + 1 > capacity) {
+                capacity *= GROWTH_FACTOR;
+                char* new_buffer = (char*)realloc(buffer, capacity);
 
                 if (!new_buffer) {
                     free(buffer);
-                    free(child_text);
                     return NULL;
                 }
 
                 buffer = new_buffer;
             }
 
-            strcat(buffer, child_text);
-            current_length += child_len;
-            free(child_text);
-        }
-    }
-
-    return buffer;
-}
-
-/* Helper function to check if a tag should be excluded from conversion. */
-static int should_exclude_tag(const char* tag_name) {
-    if (!tag_name) return 0;
-
-    const char* excluded_tags[] = {
-        "script", "style", "link", "meta", "head",
-        "noscript", "template", "iframe", "form",
-        "input", "label", "canvas", "svg", "video",
-        "source", "audio", "object", "button", "map",
-        "area", "frame", "frameset", "noframes", "nav",
-        "picture", "progress", "select", "option", "param",
-        "search", "samp", "track", "var", "wbr", "mark",
-        "meter", "optgroup", "q", "blockquote", "bdo", NULL
-    };
-
-    for (int i = 0; excluded_tags[i]; i++) {
-        if (strcmp(tag_name, excluded_tags[i]) == 0)
-            return 1;
-    }
-
-    return 0;
-}
-
-/* Check whether the given table element contains nested tables. */
-static int should_skip_nested_table(HTMLNode* node) {
-    if (!node) return -1;
-    NodeQueue* front = NULL;
-
-    NodeQueue* rear = NULL;
-    int result = 0;
-
-    /* if current node is a table, check for nested tables in descendants */
-    if (node->tag && strcmp(node->tag, "table") == 0) {
-        /* if no children, definitely no nested tables */
-        if (!node->children) return 0;
-
-        /* enqueue direct children */
-        HTMLNode* child = node->children;
-
-        while (child) {
-            if (!queue_enqueue(&front, &rear, child)) goto cleanup;
-            child = child->next;
+            memcpy(buffer + length, text, text_len);
+            length += text_len;
+            buffer[length] = '\0';
         }
 
-        /* BFS for nested tables */
-        while ((child = queue_dequeue(&front, &rear))) {
-            if (child->tag && strcmp(child->tag, "table") == 0) {
-                result = 1;
-                goto cleanup;
+        /* push children in reverse order so that they are processed in the original order */
+        if (current->children) {
+            int child_count = 0;
+            HTMLNode* child = current->children;
+
+            while (child) {
+                child_count++;
+                child = child->next;
             }
 
-            /* enqueue children for further search */
-            HTMLNode* grandchild = child->children;
+            /* allocate array to hold children in order */
+            HTMLNode** children = (HTMLNode**)malloc(child_count * sizeof(HTMLNode*));
 
-            while (grandchild) {
-                if (!queue_enqueue(&front, &rear, grandchild)) goto cleanup;
-                grandchild = grandchild->next;
-            }
-        }
-    }
+            if (children) {
+                child = current->children;
 
-    /* check parent hierarchy for table with nested tables */
-    for (HTMLNode* parent = node->parent; parent; parent = parent->parent) {
-        if (parent->tag && strcmp(parent->tag, "table") == 0) {
-            /* clean and reuse the queue */
-            queue_cleanup(&front, &rear);
-
-            /* enqueue parent's children */
-            HTMLNode* sibling = parent->children;
-
-            while (sibling) {
-                if (sibling != node && !queue_enqueue(&front, &rear, sibling)) goto cleanup;
-                sibling = sibling->next;
-            }
-
-            /* BFS for nested tables in parent's descendants */
-            HTMLNode* current;
-            while ((current = queue_dequeue(&front, &rear))) {
-                if (current->tag && strcmp(current->tag, "table") == 0) {
-                    result = 1;
-                    goto cleanup;
+                for (int i = 0; i < child_count && child; i++) {
+                    children[i] = child;
+                    child = child->next;
                 }
 
-                /* enqueue children for further search */
-                HTMLNode* grandchild = current->children;
-                while (grandchild) {
-                    if (!queue_enqueue(&front, &rear, grandchild)) goto cleanup;
-                    grandchild = grandchild->next;
+                /* push in reverse order */
+                for (int i = child_count - 1; i >= 0; i--) {
+                    if (stack_top < 255)
+                        stack[++stack_top] = children[i];
                 }
-            }
 
-            /* found nested table in parent chain? */
-            if (result) break;
-        }
-    }
-
-cleanup:
-    queue_cleanup(&front, &rear);
-    return result;
-}
-
-/* Check whether the HTML element is a table containing only images. */
-static int table_contains_only_images(HTMLNode* node) {
-    if (!node || !node->tag || strcmp(node->tag, "table") != 0)
-        return 0;
-
-    NodeQueue* front = NULL;
-    NodeQueue* rear = NULL;
-    int has_images = 0;
-
-    /* enqueue direct children */
-    for (HTMLNode* child = node->children; child; child = child->next)
-        if (!queue_enqueue(&front, &rear, child)) goto cleanup;
-
-    /* BFS traversal */
-    HTMLNode* current;
-
-    while ((current = queue_dequeue(&front, &rear))) {
-        if (current->tag) {
-            /* check for image tag */
-            if (strcmp(current->tag, "img") == 0) {
-                has_images = 1;
-                continue;
-            }
-
-            /* check for structural table elements */
-            if (strcmp(current->tag, "tbody") == 0 ||
-                strcmp(current->tag, "thead") == 0 ||
-                strcmp(current->tag, "tfoot") == 0 ||
-                strcmp(current->tag, "tr") == 0 ||
-                strcmp(current->tag, "td") == 0 ||
-                strcmp(current->tag, "th") == 0 ||
-                strcmp(current->tag, "caption") == 0) {
-
-                /* enqueue children */
-                for (HTMLNode* child = current->children; child; child = child->next)
-                    if (!queue_enqueue(&front, &rear, child)) goto cleanup;
-                
-                continue;
-            }
-
-            /* any other tag means failure */
-            has_images = 0;
-            goto cleanup;
-        }
-        else if (current->content) {
-            /* check for non-whitespace text */
-            const char* p = current->content;
-
-            while (*p) {
-                if (!isspace(*p++)) {
-                    has_images = 0;
-                    goto cleanup;
-                }
+                free(children);
             }
         }
     }
 
-cleanup:
-    queue_cleanup(&front, &rear);
-    return has_images;
+    if (length == 0) {
+        free(buffer);
+        return NULL;
+    }
+
+    /* trim the buffer */
+    char* result = (char*)realloc(buffer, length + 1);
+    return result ? result : buffer;
 }
 
-static void process_table_image(LaTeXConverter* converter, HTMLNode* img_node) {
-    char* src = get_attribute(img_node->attributes, "src");
-    if (!src) return;
+void process_table_image(LaTeXConverter* converter, HTMLNode* img_node) {
+    if (!converter || !img_node) {
+        if (converter) {
+            converter->error_code = 12;
+            strncpy(converter->error_message,
+                "NULL parameters in process_table_image() function.",
+                sizeof(converter->error_message) - 1);
+        }
+
+        return;
+    }
+
+    /* get source attribute */
+    const char* src = get_attribute(img_node->attributes, "src");
+    if (!src || src[0] == '\0') return;
+
+    /* handle image download */
     char* image_path = NULL;
+    int is_downloaded_image = 0;
 
     if (converter->download_images && converter->image_output_dir) {
         converter->image_counter++;
-        image_path = download_image_src(src, converter->image_output_dir, converter->image_counter);
+        image_path = download_image_src(src, converter->image_output_dir,
+            converter->image_counter);
+
+        /* check if path starts with output directory */
+        if (image_path) {
+            size_t dir_len = strlen(converter->image_output_dir);
+            is_downloaded_image = (strncmp(image_path, converter->image_output_dir,
+                dir_len) == 0);
+        }
     }
 
-    if (!image_path) image_path = strdup(src);
-    if (!image_path) return;
+    /* use original source if download failed or not enabled */
+    if (!image_path) {
+        image_path = strdup(src);
+        if (!image_path) return;
+    }
 
-    /* get dimensions and style */
+    /* parse CSS style once and reuse */
+    CSSProperties* img_css = NULL;
     int width_pt = 0, height_pt = 0;
-    char* width_attr = get_attribute(img_node->attributes, "width");
-    char* height_attr = get_attribute(img_node->attributes, "height");
-    char* style_attr = get_attribute(img_node->attributes, "style");
 
-    if (width_attr) width_pt = css_length_to_pt(width_attr);
-    if (height_attr) height_pt = css_length_to_pt(height_attr);
+    int has_background = 0;
+    char* bg_hex_color = NULL;
+    const char* style_attr = get_attribute(img_node->attributes, "style");
 
     if (style_attr) {
-        CSSProperties* img_css = parse_css_style(style_attr);
-
+        img_css = parse_css_style(style_attr);
         if (img_css) {
+            /* process dimensions from CSS first */
             if (img_css->width) width_pt = css_length_to_pt(img_css->width);
             if (img_css->height) height_pt = css_length_to_pt(img_css->height);
 
-            /* background color */
+            /* process background color */
             if (img_css->background_color) {
-                char* bg_color = css_color_to_hex(img_css->background_color);
+                bg_hex_color = css_color_to_hex(img_css->background_color);
 
-                if (bg_color && strcmp(bg_color, "FFFFFF") != 0) {
-                    append_string(converter, "\\colorbox[HTML]{");
-                    append_string(converter, bg_color);
-
-                    append_string(converter, "}{");
-                    free(bg_color);
-                }
+                if (bg_hex_color && strcmp(bg_hex_color, "FFFFFF") != 0)
+                    has_background = 1;
             }
-
-            free_css_properties(img_css);
         }
     }
 
-    /* write LaTeX graphics */
-    append_string(converter, "\\includegraphics");
+    /* fall back to width/height attributes if CSS didn't provide dimensions */
+    if (width_pt == 0) {
+        const char* width_attr = get_attribute(img_node->attributes, "width");
+        if (width_attr) width_pt = css_length_to_pt(width_attr);
+    }
+
+    if (height_pt == 0) {
+        const char* height_attr = get_attribute(img_node->attributes, "height");
+        if (height_attr) height_pt = css_length_to_pt(height_attr);
+    }
+
+    /* pre-compute buffer requirements for fixed strings */
+    size_t fixed_parts_len = 0;
+
+    /* background colorbox opening */
+    if (has_background && bg_hex_color)
+        fixed_parts_len += 24;
+
+    /* graphics command */
+    fixed_parts_len += 15;
+
+    /* options for width/height */
+    char options[64] = { 0 };
+    size_t options_len = 0;
 
     if (width_pt > 0 || height_pt > 0) {
-        append_string(converter, "[");
+        fixed_parts_len += 2;
 
         if (width_pt > 0) {
-            char width_str[16];
-            snprintf(width_str, sizeof(width_str), "width=%dmm", width_pt);
-            append_string(converter, width_str);
+            int chars = snprintf(options, sizeof(options), "width=%dpt", width_pt);
+            if (chars > 0) options_len = chars;
         }
-        if (height_pt > 0) {
-            if (width_pt > 0) append_string(converter, ", ");
-            char height_str[16];
 
-            snprintf(height_str, sizeof(height_str), "height=%dmm", height_pt);
-            append_string(converter, height_str);
+        if (height_pt > 0) {
+            if (options_len > 0) {
+                options[options_len++] = ',';
+                options[options_len++] = ' ';
+            }
+
+            int chars = snprintf(options + options_len, sizeof(options) - options_len,
+                "height=%dpt", height_pt);
+            if (chars > 0) options_len += chars;
         }
-        append_string(converter, "]");
+
+        fixed_parts_len += options_len;
     }
 
-    append_string(converter, "{");
+    /* opening and closing braces for image path */
+    fixed_parts_len += 2;
 
-    if (converter->download_images && converter->image_output_dir &&
-        strstr(image_path, converter->image_output_dir) == image_path) {
-        escape_latex_special(converter, image_path + 2);
+    /* background closing */
+    if (has_background)
+        fixed_parts_len++;
+
+    /* allocate buffer for fixed parts */
+    ensure_capacity(converter, fixed_parts_len);
+    if (converter->error_code) goto cleanup;
+
+    /* build and append fixed parts */
+    char* dest = converter->output + converter->output_size;
+
+    /* background colorbox, if any */
+    if (has_background && bg_hex_color) {
+        memcpy(dest, "\\colorbox[HTML]{", 16); dest += 16;
+        memcpy(dest, bg_hex_color, 6); dest += 6;
+        memcpy(dest, "}{", 2); dest += 2;
+    }
+
+    memcpy(dest, "\\includegraphics", 15);
+    dest += 15;
+
+    /* options, if any */
+    if (options_len > 0) {
+        *dest++ = '[';
+        memcpy(dest, options, options_len);
+
+        dest += options_len;
+        *dest++ = ']';
+    }
+
+    /* opening brace for image path */
+    *dest++ = '{';
+
+    /* update output size after fixed parts */
+    converter->output_size += (size_t)(dest - (converter->output + converter->output_size));
+
+    /* escaped image path */
+    if (is_downloaded_image) {
+        /* skip the output directory part for downloaded images */
+        size_t dir_len = strlen(converter->image_output_dir);
+
+        const char* path_to_escape = image_path + dir_len + 1;
+        escape_latex_special(converter, path_to_escape);
     }
     else
         escape_latex(converter, image_path);
     append_string(converter, "}");
 
     /* close colorbox if opened */
-    if (style_attr) {
-        CSSProperties* img_css = parse_css_style(style_attr);
-        if (img_css && img_css->background_color) {
-            char* bg_color = css_color_to_hex(img_css->background_color);
+    if (has_background)
+        append_string(converter, "}");
 
-            if (bg_color && strcmp(bg_color, "FFFFFF") != 0) {
-                append_string(converter, "}");
-                free(bg_color);
-            }
-
-            free_css_properties(img_css);
-        }
-    }
-
-    free(image_path);
+cleanup:
+    if (image_path) free(image_path);
+    if (bg_hex_color) free(bg_hex_color);
+    if (img_css) free_css_properties(img_css);
 }
 
-static void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node) {
-    /* find the figure caption */
-    HTMLNode* caption = NULL;
-    converter->state.figure_internal_counter++;
+void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node) {
+    if (!converter || !table_node) return;
 
-    for (HTMLNode* child = table_node->children; child; child = child->next) {
-        if (child->tag && strcmp(child->tag, "caption") == 0) {
+    /* increment the counter */
+    converter->state.figure_internal_counter++;
+    int figure_counter = converter->state.figure_internal_counter;
+
+    /* find caption */
+    HTMLNode* caption = NULL;
+    HTMLNode* child = table_node->children;
+
+    while (child) {
+        if (child->tag && child->tag[0] == 'c' &&
+            strcmp(child->tag, "caption") == 0) {
             caption = child;
             break;
         }
+
+        child = child->next;
     }
 
-    append_string(converter, "\\caption{");
+    char* caption_text = NULL;
+    if (caption) caption_text = extract_caption_text(caption);
 
-    if (caption) {
-        /* extract caption text */
-        for (HTMLNode* text_node = caption->children; text_node; text_node = text_node->next) {
-            if (!text_node->tag && text_node->content)
-                escape_latex(converter, text_node->content);
-        }
+    /* build the label */
+    const char* fig_id = get_attribute(table_node->attributes, "id");
+    char figure_label[64];
+
+    /* safe copy with bounds checking */
+    if (fig_id && fig_id[0] != '\0') {
+        size_t len = strlen(fig_id);
+        size_t copy_len = (len < sizeof(figure_label) - 1) ? 
+            len : sizeof(figure_label) - 1;
+
+        strncpy(figure_label, fig_id, copy_len);
+        figure_label[copy_len] = '\0';
     }
     else {
-        /* default caption */
+        snprintf(figure_label, sizeof(figure_label), 
+            "figure_%d", figure_counter);
+    }
+
+    /* build complete string in one buffer */
+    size_t max_len = 256;
+
+    if (caption_text) max_len += (strlen(caption_text) << 4);
+    ensure_capacity(converter, max_len);
+
+    if (converter->error_code) {
+        if (caption_text) free(caption_text);
+        return;
+    }
+
+    /* minimize append_string function calls */
+    append_string(converter, "\\caption{");
+
+    if (caption_text) {
+        escape_latex(converter, caption_text);
+        free(caption_text);
+    }
+    else {
         append_string(converter, "Figure ");
         char counter_str[32];
 
-        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.figure_internal_counter);
+        snprintf(counter_str, sizeof(counter_str), "%d", figure_counter);
         append_string(converter, counter_str);
     }
 
-    append_string(converter, "}\n");
-
-    /* figure label */
-    const char* fig_id = get_attribute(table_node->attributes, "id");
-    char figure_label[32];
-
-    if (!fig_id || fig_id[0] == '\0')
-        snprintf(figure_label, sizeof(figure_label), "figure_%d", converter->state.figure_internal_counter);
-    else {
-        strncpy(figure_label, fig_id, sizeof(figure_label) - 1);
-        figure_label[sizeof(figure_label) - 1] = '\0';
-    }
-
-    append_string(converter, "\\label{fig:");
+    append_string(converter, "}\n\\label{fig:");
     escape_latex_special(converter, figure_label);
     append_string(converter, "}\n");
-}
-
-/* Convert a table containing only img nodes by parsing the DOM tree. */
-static void convert_image_table(LaTeXConverter* converter, HTMLNode* node) {
-    /* write figure header */
-    append_string(converter, "\\begin{figure}[htbp]\n\\centering\n");
-    append_string(converter, "\\setlength{\\fboxsep}{0pt}\n\\setlength{\\tabcolsep}{1pt}\n");
-
-    /* start tabular */
-    int columns = count_table_columns(node);
-    append_string(converter, "\\begin{tabular}{");
-
-    for (int i = 0; i < columns; i++) append_string(converter, "c");
-    append_string(converter, "}\n");
-
-    /* BFS for table rows */
-    NodeQueue* queue = NULL, * rear = NULL;
-    NodeQueue* cell_queue = NULL, * cell_rear = NULL;
-    int first_row = 1;
-
-    /* enqueue table children */
-    for (HTMLNode* child = node->children; child; child = child->next) {
-        queue_enqueue(&queue, &rear, child);
-    }
-
-    /* process table */
-    HTMLNode* current;
-
-    while ((current = queue_dequeue(&queue, &rear))) {
-        if (!current->tag) continue;
-
-        if (strcmp(current->tag, "tr") == 0) {
-            if (!first_row) append_string(converter, " \\\\\n");
-            first_row = 0;
-
-            /* process cells in row */
-            HTMLNode* cell = current->children;
-            int col_count = 0;
-
-            while (cell) {
-                if (cell->tag && (strcmp(cell->tag, "td") == 0 || strcmp(cell->tag, "th") == 0)) {
-                    if (col_count++ > 0) append_string(converter, " & ");
-
-                    /* BFS search for image in cell */
-                    cell_queue = cell_rear = NULL;
-
-                    for (HTMLNode* cell_child = cell->children; cell_child; cell_child = cell_child->next)
-                        queue_enqueue(&cell_queue, &cell_rear, cell_child);
-
-                    int img_found = 0;
-                    HTMLNode* cell_node;
-
-                    while ((cell_node = queue_dequeue(&cell_queue, &cell_rear)) && !img_found) {
-                        if (cell_node->tag && strcmp(cell_node->tag, "img") == 0) {
-                            process_table_image(converter, cell_node);
-                            img_found = 1;
-                        }
-                        else if (cell_node->tag) {
-                            /* enqueue children for deeper search */
-                            for (HTMLNode* grandchild = cell_node->children; grandchild; grandchild = grandchild->next)
-                                queue_enqueue(&cell_queue, &cell_rear, grandchild);
-                        }
-                    }
-
-                    if (!img_found) append_string(converter, " ");
-                    queue_cleanup(&cell_queue, &cell_rear);
-                }
-
-                cell = cell->next;
-            }
-        }
-        else if (strcmp(current->tag, "tbody") == 0 || strcmp(current->tag, "thead") == 0 ||
-            strcmp(current->tag, "tfoot") == 0) {
-            /* enqueue section children */
-            for (HTMLNode* section_child = current->children; section_child; section_child = section_child->next)
-                queue_enqueue(&queue, &rear, section_child);
-        }
-    }
-
-    /* cleanup queues */
-    queue_cleanup(&queue, &rear);
-    queue_cleanup(&cell_queue, &cell_rear);
-
-    /* finish tabular and figure */
-    append_string(converter, "\n\\end{tabular}\n");
-
-    append_figure_caption(converter, node);
-    append_string(converter, "\\end{figure}\n\\FloatBarrier\n\n");
-}
-
-static int is_inside_table(HTMLNode* node) {
-    if (!node) return 0;
-    HTMLNode* current = node->parent;
-
-    while (current) {
-        if (current->tag && strcmp(current->tag, "table") == 0)
-            return 1;
-
-        current = current->parent;
-    }
-
-    return 0;
-}
-
-static int is_whitespace_only(const char* text) {
-    if (!text) return 1;
-
-    for (const char* p = text; *p; p++) {
-        if (!isspace(*p)) 
-            return 0;
-    }
-
-    return 1;
 }
 
 void convert_node(LaTeXConverter* converter, HTMLNode* node) {
@@ -941,7 +1217,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
 
     // skip CSS processing for caption nodes in tables to prevent state leakage
     if (!(converter->state.in_table && node->tag && strcmp(node->tag, "caption") == 0)) {
-        char* style_attr = get_attribute(node->attributes, "style");
+        const char* style_attr = get_attribute(node->attributes, "style");
         if (style_attr) css_props = parse_css_style(style_attr);
 
         /* apply CSS properties before element content */
@@ -1010,8 +1286,8 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
     }
     else if (strcmp(node->tag, "font") == 0) {
         /* parse color attribute and style background-color */
-        char* color_attr = get_attribute(node->attributes, "color");
-        char* style_attr = get_attribute(node->attributes, "style");
+        const char* color_attr = get_attribute(node->attributes, "color");
+        const char* style_attr = get_attribute(node->attributes, "style");
         char* text_color = NULL;
 
         /* extract text color from style if present */
@@ -1037,7 +1313,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* CSS properties handle styling, just convert content */
         convert_children(converter, node);
     else if (strcmp(node->tag, "a") == 0) {
-        char* href = get_attribute(node->attributes, "href");
+        const char* href = get_attribute(node->attributes, "href");
 
         if (href) {
             append_string(converter, "\\href{");
@@ -1076,11 +1352,11 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         /* check if image is inside a table */
         if (is_inside_table(node)) {
             /* skip figure environment for images inside tables */
-            char* src = get_attribute(node->attributes, "src");
-            char* width_attr = get_attribute(node->attributes, "width");
+            const char* src = get_attribute(node->attributes, "src");
+            const char* width_attr = get_attribute(node->attributes, "width");
 
-            char* height_attr = get_attribute(node->attributes, "height");
-            char* style_attr = get_attribute(node->attributes, "style");
+            const char* height_attr = get_attribute(node->attributes, "height");
+            const char* style_attr = get_attribute(node->attributes, "style");
 
             if (src) {
                 char* image_path = NULL;
@@ -1153,12 +1429,12 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
             converter->image_counter++;
             converter->state.image_internal_counter++;
 
-            char* src = get_attribute(node->attributes, "src");
-            char* alt = get_attribute(node->attributes, "alt");
-            char* width_attr = get_attribute(node->attributes, "width");
+            const char* src = get_attribute(node->attributes, "src");
+            const char* alt = get_attribute(node->attributes, "alt");
+            const char* width_attr = get_attribute(node->attributes, "width");
 
-            char* height_attr = get_attribute(node->attributes, "height");
-            char* image_id_attr = get_attribute(node->attributes, "id");
+            const char* height_attr = get_attribute(node->attributes, "height");
+            const char* image_id_attr = get_attribute(node->attributes, "id");
 
             if (src) {
                 char* image_path = NULL;
@@ -1348,7 +1624,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
                 /* parse CSS properties separately without affecting converter state */
                 CSSProperties* css_props = NULL;
 
-                char* style_attr = get_attribute(node->attributes, "style");
+                const char* style_attr = get_attribute(node->attributes, "style");
                 if (style_attr) css_props = parse_css_style(style_attr);
 
                 /* apply CSS formatting directly to caption without converter */
@@ -1435,7 +1711,7 @@ void convert_node(LaTeXConverter* converter, HTMLNode* node) {
         int is_header = (strcmp(node->tag, "th") == 0);
 
         /* handle colspan */
-        char* colspan_attr = get_attribute(node->attributes, "colspan");
+        const char* colspan_attr = get_attribute(node->attributes, "colspan");
         int colspan = 1;
 
         if (colspan_attr) {

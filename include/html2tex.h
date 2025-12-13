@@ -145,7 +145,7 @@ extern "C" {
 	/* Returns the error message from the HTML-to-LaTeX conversion. */
     const char* html2tex_get_error_message(const LaTeXConverter* converter);
     
-	/* Writes the input string in LaTeX format. */
+	/* Append a string to the LaTeX output buffer with optimized copying. */
     void append_string(LaTeXConverter* converter, const char* str);
 	
 	/* Recursively converts a DOM child node to LaTeX. */
@@ -218,17 +218,55 @@ extern "C" {
 	void reset_css_state(LaTeXConverter* converter);
 	
 	/* Returns a null-terminated duplicate of the string referenced by str. */
-    char* portable_strdup(const char* str);
+    char* html2tex_strdup(const char* str);
 	
 	/* Convert an integer to a null-terminated string using the given radix and store it in buffer. */
 	void portable_itoa(int value, char* buffer, int radix);
 	
-	inline int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data);
-	inline HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear);
-	inline void queue_cleanup(NodeQueue** front, NodeQueue** rear);
+	/* Adds an HTML node to the rear of the queue for breadth-first traversal. */
+	int queue_enqueue(NodeQueue** front, NodeQueue** rear, HTMLNode* data);
+
+	/* Removes and returns the HTML node from the front of the queue. */
+	HTMLNode* queue_dequeue(NodeQueue** front, NodeQueue** rear);
+
+	/* Recursively frees all queue structures and all HTML DOM nodes contained within the queue. */
+	void queue_cleanup(NodeQueue** front, NodeQueue** rear);
+
+	/* Determine if an HTML tag should be excluded from LaTeX conversion. */
+	int should_exclude_tag(const char* tag_name);
+
+	/* Check if string contains only whitespace. */
+	int is_whitespace_only(const char* text);
+
+	/* Check whether the given table element contains nested tables. */
+	int should_skip_nested_table(HTMLNode* node);
+
+	/* Detect if we're inside a table cell by checking parent hierarchy. */
+	int is_inside_table_cell(LaTeXConverter* converter, HTMLNode* node);
+
+	/* Convert a table containing only img nodes by parsing the DOM tree. */
+	void convert_image_table(LaTeXConverter* converter, HTMLNode* node);
+
+	/* Check if an HTML node is inside a table element. */
+	int is_inside_table(HTMLNode* node);
+
+	/* Check whether the HTML element is a table containing only images. */
+	int table_contains_only_images(HTMLNode* node);
 	
+	/* Process an image node within table context for LaTeX generation. */
+	void process_table_image(LaTeXConverter* converter, HTMLNode* img_node);
+
+	/* Generate LaTeX figure caption for a table containing images. */
+	void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node);
+
+	/* Retrieve attribute value from linked list with case-insensitive matching. */
+	const char* get_attribute(HTMLAttribute* attrs, const char* key);
+
+	/* Calculate maximum number of columns in an HTML table. */
+	int count_table_columns(HTMLNode* node);
+
 	#ifdef _MSC_VER
-	#define strdup portable_strdup
+	#define strdup html2tex_strdup
 	#define html2tex_itoa(value, buffer, radix) _itoa((value), (buffer), (radix))
 	#else
 	#define html2tex_itoa(value, buffer, radix) portable_itoa((value), (buffer), (radix))
@@ -236,8 +274,11 @@ extern "C" {
 	
 	#ifdef _WIN32
     #define mkdir(path) _mkdir(path)
+	#define strcasecmp _stricmp
+	#define strncasecmp _strnicmp
 	#else
 	#define mkdir(path) mkdir(path, 0755)
+	#include <strings.h>
 	#endif
 
 #ifdef __cplusplus

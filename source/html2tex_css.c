@@ -7,13 +7,6 @@
 
 #define HT_MAX_CSS_PROPERTIES 50
 
-#ifdef _WIN32
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
-#else
-#include <strings.h>
-#endif
-
 /* Helper function to remove !important and trim whitespace. */
 static char* clean_css_value(const char* value) {
     if (!value) return NULL;
@@ -42,40 +35,6 @@ static char* clean_css_value(const char* value) {
         memmove(cleaned, start, strlen(start) + 1);
 
     return cleaned;
-}
-
-int is_block_element(const char* tag_name) {
-    if (!tag_name) return 0;
-
-    const char* block_tags[] = {
-        "div", "p", "h1", "h2", "h3", "h4", "h5", "h6",
-        "ul", "ol", "li", "table", "tr", "td", "th",
-        "blockquote", "section", "article", "header", "footer",
-        "nav", "aside", "main", "figure", "figcaption", NULL
-    };
-
-    for (int i = 0; block_tags[i]; i++) {
-        if (strcmp(tag_name, block_tags[i]) == 0)
-            return 1;
-    }
-
-    return 0;
-}
-
-int is_inline_element(const char* tag_name) {
-    if (!tag_name) return 0;
-
-    const char* inline_tags[] = {
-        "span", "a", "strong", "em", "b", "i", "u", "code",
-        "font", "mark", "small", "sub", "sup", "time", NULL
-    };
-
-    for (int i = 0; inline_tags[i]; i++) {
-        if (strcmp(tag_name, inline_tags[i]) == 0)
-            return 1;
-    }
-
-    return 0;
 }
 
 /* Check if CSS value contains !important. */
@@ -304,26 +263,6 @@ char* css_color_to_hex(const char* color_value) {
     }
 
     return result;
-}
-
-/* Detect if we're inside a table cell by checking parent hierarchy. */
-static int is_inside_table_cell(LaTeXConverter* converter, HTMLNode* node) {
-    if (!node) return converter->state.in_table_cell;
-
-    /* first check converter state for table cell */
-    if (converter->state.in_table_cell) return 1;
-
-    /* then check the node's parent hierarchy */
-    HTMLNode* current = node->parent;
-
-    while (current) {
-        if (current->tag && (strcmp(current->tag, "td") == 0 || strcmp(current->tag, "th") == 0))
-            return 1;
-
-        current = current->parent;
-    }
-
-    return 0;
 }
 
 void apply_css_properties(LaTeXConverter* converter, CSSProperties* props, const char* tag_name) {

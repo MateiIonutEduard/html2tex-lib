@@ -2,18 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-char* portable_strdup(const char* str) {
-    if (!str) return NULL;
-
-    size_t len = strlen(str) + 1;
-    char* copy = malloc(len);
-
-    if (copy)
-        memcpy(copy, str, len);
-
-    return copy;
-}
-
 LaTeXConverter* html2tex_create(void) {
     LaTeXConverter* converter = malloc(sizeof(LaTeXConverter));
     if (!converter) return NULL;

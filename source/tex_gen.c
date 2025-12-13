@@ -587,39 +587,110 @@ static void begin_table(LaTeXConverter* converter, int columns) {
 }
 
 static void end_table(LaTeXConverter* converter, const char* table_label) {
-    if (converter->state.in_table) {
-        append_string(converter, "\\end{tabular}\n");
+    if (!converter) {
+        fprintf(stderr, "Error: NULL converter in end_table() function.\n");
+        return;
+    }
 
+    /* quick exit if not in table */
+    if (!converter->state.in_table) {
+        converter->state.in_table = 0;
+        converter->state.in_table_row = 0;
+
+        converter->state.in_table_cell = 0;
+        return;
+    }
+
+    /* build table end string efficiently*/
+    const char* tabular_end = "\\end{tabular}\n";
+    const char* table_end = "\\end{table}\n\n";
+
+    /* pre-compute lengths for optimal memcpy usage */
+    size_t total_len = 0;
+    total_len += 14;
+
+    char default_caption[32];
+    const char* caption_text = NULL;
+    size_t caption_len = 0;
+
+    if (converter->state.table_caption) {
+        caption_text = converter->state.table_caption;
+        caption_len = strlen(caption_text);
+        total_len += 9 + caption_len + 2;
+    }
+    else {
+        snprintf(default_caption, sizeof(default_caption), "Table %d",
+            converter->state.table_internal_counter);
+        caption_text = default_caption;
+
+        caption_len = strlen(caption_text);
+        total_len += 9 + caption_len + 2;
+    }
+
+    size_t label_len = 0;
+    const char* label_text = NULL;
+
+    if (table_label && table_label[0] != '\0') {
+        label_text = table_label;
+        label_len = strlen(label_text);
+        total_len += 11 + label_len + 2;
+    }
+
+    total_len += 13;
+
+    /* ensure capacity */
+    ensure_capacity(converter, total_len);
+
+    if (converter->error_code) {
+        /* clean up on error */
         if (converter->state.table_caption) {
-            /* output the pre-formatted caption without escaping */
-            append_string(converter, "\\caption{");
-
-            append_string(converter, converter->state.table_caption);
-            append_string(converter, "}\n");
-
             free(converter->state.table_caption);
             converter->state.table_caption = NULL;
         }
-        else {
-            /* fallback to default caption */
-            append_string(converter, "\\caption{Table ");
 
-            char counter_str[16];
-            snprintf(counter_str, sizeof(counter_str), "%d", converter->state.table_internal_counter);
-
-            append_string(converter, counter_str);
-            append_string(converter, "}\n");
-        }
-
-        if (table_label) {
-            append_string(converter, "\\label{tab:");
-            escape_latex_special(converter, table_label);
-            append_string(converter, "}\n");
-        }
-
-        append_string(converter, "\\end{table}\n\n");
+        return;
     }
 
+    /* build complete output in one pass with memcpy() call */
+    char* dest = converter->output + converter->output_size;
+    memcpy(dest, tabular_end, 14);
+    dest += 14;
+
+    memcpy(dest, "\\caption{", 9);
+    dest += 9;
+
+    if (caption_len > 0) {
+        memcpy(dest, caption_text, caption_len);
+        dest += caption_len;
+    }
+
+    memcpy(dest, "}\n", 2);
+    dest += 2;
+
+    if (label_text && label_len > 0) {
+        memcpy(dest, "\\label{tab:", 11);
+        dest += 11;
+
+        memcpy(dest, label_text, label_len);
+        dest += label_len;
+
+        memcpy(dest, "}\n", 2);
+        dest += 2;
+    }
+
+    memcpy(dest, table_end, 13);
+    dest += 13;
+
+    /* update output size */
+    converter->output_size += total_len;
+
+    /* clean up resources */
+    if (converter->state.table_caption) {
+        free(converter->state.table_caption);
+        converter->state.table_caption = NULL;
+    }
+
+    /* reset the converter state */
     converter->state.in_table = 0;
     converter->state.in_table_row = 0;
     converter->state.in_table_cell = 0;

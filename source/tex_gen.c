@@ -277,7 +277,7 @@ static void end_environment(LaTeXConverter* converter, const char* env) {
         if (converter) {
             converter->error_code = 6;
             strncpy(converter->error_message,
-                "NULL parameter to end_environment",
+                "NULL parameter to end_environment() function.",
                 sizeof(converter->error_message) - 1);
         }
 
@@ -370,23 +370,60 @@ static char* color_to_hex(const char* color_value) {
 
 /* Handle color application with proper nesting. */
 static void apply_color(LaTeXConverter* converter, const char* color_value, int is_background) {
-    if (!color_value) return;
+    if (!converter || !color_value) {
+        if (converter) {
+            converter->error_code = 7;
+            strncpy(converter->error_message,
+                "NULL parameter to apply_color() function.",
+                sizeof(converter->error_message) - 1);
+        }
+
+        return;
+    }
 
     char* hex_color = color_to_hex(color_value);
-    if (!hex_color) return;
+
+    if (!hex_color) {
+        converter->error_code = 8;
+        strncpy(converter->error_message,
+            "Failed to convert color to hex",
+            sizeof(converter->error_message) - 1);
+
+        return;
+    }
+
+    /* pre-allocate buffer for the entire command to reduce function calls */
+    size_t prefix_len = is_background ? 17 : 16;
+    size_t hex_len = strlen(hex_color);
+
+    size_t suffix_len = 2;
+    size_t total_len = prefix_len + hex_len + suffix_len;
+    ensure_capacity(converter, total_len);
+
+    if (converter->error_code) {
+        free(hex_color);
+        return;
+    }
+
+    char* dest = converter->output + converter->output_size;
 
     if (is_background) {
-        append_string(converter, "\\colorbox[HTML]{");
-        append_string(converter, hex_color);
-        append_string(converter, "}{");
+        memcpy(dest, "\\colorbox[HTML]{", 16);
+        dest += 16;
     }
     else {
-        append_string(converter, "\\textcolor[HTML]{");
-        append_string(converter, hex_color);
-        append_string(converter, "}{");
+        memcpy(dest, "\\textcolor[HTML]{", 17);
+        dest += 17;
     }
 
-    free(hex_color);
+    memcpy(dest, hex_color, hex_len);
+    dest += hex_len;
+
+    memcpy(dest, "}{", 2);
+    dest += 2;
+
+    converter->output_size += total_len;
+    *dest = '\0'; free(hex_color);
 }
 
 static void begin_table(LaTeXConverter* converter, int columns) {

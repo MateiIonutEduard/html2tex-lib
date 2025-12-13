@@ -1,5 +1,48 @@
 #include "html2tex.h"
 
+const char* get_attribute(HTMLAttribute* attrs, const char* key) {
+    if (!key || key[0] == '\0') return NULL;
+    size_t key_len = 0;
+
+    /* precompute key length once for fast rejection */
+    while (key[key_len]) key_len++;
+
+    for (HTMLAttribute* attr = attrs; attr; attr = attr->next) {
+        /* check first char for early rejection */
+        if (!attr->key || attr->key[0] != key[0]) continue;
+
+        /* length-based fast rejection */
+        size_t attr_len = 0;
+
+        while (attr->key[attr_len]) attr_len++;
+        if (attr_len != key_len) continue;
+
+        /* exact case-insensitive comparison */
+        int match = 1;
+
+        for (size_t i = 0; i < key_len; i++) {
+            char c1 = attr->key[i];
+            char c2 = key[i];
+
+            /* fast ASCII case conversion */
+            if ((c1 ^ c2) & 0x20) {
+                /* convert both to lowercase for comparison */
+                c1 |= 0x20;
+                c2 |= 0x20;
+            }
+
+            if (c1 != c2) {
+                match = 0;
+                break;
+            }
+        }
+
+        if (match) return attr->value;
+    }
+
+    return NULL;
+}
+
 int should_skip_nested_table(HTMLNode* node) {
     if (!node) return -1;
     NodeQueue* front = NULL;

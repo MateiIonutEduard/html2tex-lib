@@ -259,6 +259,9 @@ extern "C" {
 	/* Generate LaTeX figure caption for a table containing images. */
 	void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node);
 
+	/* Retrieve attribute value from linked list with case-insensitive matching. */
+	const char* get_attribute(HTMLAttribute* attrs, const char* key);
+
 	/* Calculate maximum number of columns in an HTML table. */
 	int count_table_columns(HTMLNode* node);
 

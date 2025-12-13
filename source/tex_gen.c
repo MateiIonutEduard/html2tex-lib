@@ -137,25 +137,66 @@ static void escape_latex_special(LaTeXConverter* converter, const char* text)
 }
 
 static void escape_latex(LaTeXConverter* converter, const char* text) {
-    if (!text) return;
+    if (!text || !converter) return;
 
-    for (const char* p = text; *p; p++) {
-        switch (*p) {
-        case '\\': append_string(converter, "\\textbackslash{}"); break;
-        case '{': append_string(converter, "\\{"); break;
-        case '}': append_string(converter, "\\}"); break;
-        case '&': append_string(converter, "\\&"); break;
-        case '%': append_string(converter, "\\%"); break;
-        case '$': append_string(converter, "\\$"); break;
-        case '#': append_string(converter, "\\#"); break;
-        case '_': append_string(converter, "\\_"); break;
-        case '^': append_string(converter, "\\^{}"); break;
-        case '~': append_string(converter, "\\~{}"); break;
-        case '<': append_string(converter, "\\textless{}"); break;
-        case '>': append_string(converter, "\\textgreater{}"); break;
-        case '\n': append_string(converter, "\\\\"); break;
-        default: append_char(converter, *p); break;
+    /* lookup tables for LaTeX special characters */
+    static const unsigned char key[256] = {
+        ['\\'] = 1,['{'] = 2,['}'] = 3,['&'] = 4,
+        ['%'] = 5,['$'] = 6,['#'] = 7,['_'] = 8,
+        ['^'] = 9,['~'] = 10,['<'] = 11,['>'] = 12,
+        ['\n'] = 13
+    };
+
+    static const char* const value[] = {
+        NULL, "\\textbackslash{}", "\\{", "\\}", "\\&",
+        "\\%", "\\$", "\\#", "\\_", "\\^{}", "\\~{}", 
+        "\\textless{}", "\\textgreater{}", "\\\\"
+    };
+
+    const char* p = text;
+    const char* start = p;
+
+    while (*p) {
+        unsigned char c = (unsigned char)*p;
+        unsigned char type = key[c];
+
+        if (type == 0) {
+            p++;
+            continue;
         }
+
+        if (p > start) {
+            /* copy normal characters before special */
+            size_t normal_len = p - start;
+
+            ensure_capacity(converter, normal_len);
+            if (converter->error_code) return;
+
+            char* dest = converter->output + converter->output_size;
+            memcpy(dest, start, normal_len);
+
+            converter->output_size += normal_len;
+            converter->output[converter->output_size] = '\0';
+        }
+
+        /* append escaped sequence */
+        append_string(converter, value[type]);
+        if (converter->error_code) return;
+        p++; start = p;
+    }
+
+    if (p > start) {
+        /* copy remaining normal characters */
+        size_t remaining_len = p - start;
+
+        ensure_capacity(converter, remaining_len);
+        if (converter->error_code) return;
+
+        char* dest = converter->output + converter->output_size;
+        memcpy(dest, start, remaining_len);
+
+        converter->output_size += remaining_len;
+        converter->output[converter->output_size] = '\0';
     }
 }
 

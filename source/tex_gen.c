@@ -866,79 +866,85 @@ int count_table_columns(HTMLNode* node) {
 /* Returns the extracted caption text. */
 static char* extract_caption_text(HTMLNode* node) {
     if (!node) return NULL;
-    size_t buffer_size = 256;
 
-    char* buffer = (char*)malloc(buffer_size);
+    /* use a simple dynamic string */
+    size_t capacity = 256;
+    char* buffer = (char*)malloc(capacity);
+
     if (!buffer) return NULL;
-
+    size_t length = 0;
     buffer[0] = '\0';
-    size_t current_length = 0;
 
-    /* process current node if it's a text node */
-    if (!node->tag && node->content && node->content[0] != '\0') {
-        size_t content_len = strlen(node->content);
+    /* use a stack for DFS */
+    HTMLNode* stack[256];
+    int stack_top = -1;
+    stack[++stack_top] = node;
 
-        /* ensure capacity */
-        if (current_length + content_len + 1 > buffer_size) {
-            buffer_size = (current_length + content_len + 1) * 2;
-            char* new_buffer = (char*)realloc(buffer, buffer_size);
+    while (stack_top >= 0) {
+        HTMLNode* current = stack[stack_top--];
 
-            if (!new_buffer) {
-                free(buffer);
-                return NULL;
-            }
+        /* if it's a text node, append its content */
+        if (!current->tag && current->content) {
+            const char* text = current->content;
+            size_t text_len = strlen(text);
 
-            buffer = new_buffer;
-        }
+            /* check if we need to grow the buffer */
+            if (length + text_len + 1 > capacity) {
+                capacity *= GROWTH_FACTOR;
+                char* new_buffer = (char*)realloc(buffer, capacity);
 
-        memcpy(buffer + current_length, node->content, content_len);
-        current_length += content_len;
-        buffer[current_length] = '\0';
-    }
-
-    /* process children */
-    if (node->children) {
-        HTMLNode* child = node->children;
-
-        while (child) {
-            char* child_text = extract_caption_text(child);
-
-            if (child_text) {
-                size_t child_len = strlen(child_text);
-
-                /* ensure capacity */
-                if (current_length + child_len + 1 > buffer_size) {
-                    buffer_size = (current_length + child_len + 1) * 2;
-                    char* new_buffer = (char*)realloc(buffer, buffer_size);
-
-                    if (!new_buffer) {
-                        free(buffer);
-                        free(child_text);
-                        return NULL;
-                    }
-
-                    buffer = new_buffer;
+                if (!new_buffer) {
+                    free(buffer);
+                    return NULL;
                 }
 
-                /* append the child text */
-                memcpy(buffer + current_length, child_text, child_len);
-                current_length += child_len;
-                buffer[current_length] = '\0';
-
-                free(child_text);
+                buffer = new_buffer;
             }
-            child = child->next;
+
+            memcpy(buffer + length, text, text_len);
+            length += text_len;
+            buffer[length] = '\0';
+        }
+
+        /* push children in reverse order so that they are processed in the original order */
+        if (current->children) {
+            int child_count = 0;
+            HTMLNode* child = current->children;
+
+            while (child) {
+                child_count++;
+                child = child->next;
+            }
+
+            /* allocate array to hold children in order */
+            HTMLNode** children = (HTMLNode**)malloc(child_count * sizeof(HTMLNode*));
+
+            if (children) {
+                child = current->children;
+
+                for (int i = 0; i < child_count && child; i++) {
+                    children[i] = child;
+                    child = child->next;
+                }
+
+                /* push in reverse order */
+                for (int i = child_count - 1; i >= 0; i--) {
+                    if (stack_top < 255)
+                        stack[++stack_top] = children[i];
+                }
+
+                free(children);
+            }
         }
     }
 
-    /* return NULL if no content was found */
-    if (current_length == 0) {
+    if (length == 0) {
         free(buffer);
         return NULL;
     }
 
-    /* trim the buffer to actual size */
-    char* result = realloc(buffer, current_length + 1);
+    /* trim the buffer */
+    char* result = (char*)realloc(buffer, length + 1);
     return result ? result : buffer;
 }
 
@@ -1038,49 +1044,74 @@ void process_table_image(LaTeXConverter* converter, HTMLNode* img_node) {
 }
 
 void append_figure_caption(LaTeXConverter* converter, HTMLNode* table_node) {
-    /* find the figure caption */
-    HTMLNode* caption = NULL;
-    converter->state.figure_internal_counter++;
+    if (!converter || !table_node) return;
 
-    for (HTMLNode* child = table_node->children; child; child = child->next) {
-        if (child->tag && strcmp(child->tag, "caption") == 0) {
+    /* increment the counter */
+    converter->state.figure_internal_counter++;
+    int figure_counter = converter->state.figure_internal_counter;
+
+    /* find caption */
+    HTMLNode* caption = NULL;
+    HTMLNode* child = table_node->children;
+
+    while (child) {
+        if (child->tag && child->tag[0] == 'c' &&
+            strcmp(child->tag, "caption") == 0) {
             caption = child;
             break;
         }
+
+        child = child->next;
     }
 
-    append_string(converter, "\\caption{");
+    char* caption_text = NULL;
+    if (caption) caption_text = extract_caption_text(caption);
 
-    if (caption) {
-        /* extract caption text */
-        for (HTMLNode* text_node = caption->children; text_node; text_node = text_node->next) {
-            if (!text_node->tag && text_node->content)
-                escape_latex(converter, text_node->content);
-        }
+    /* build the label */
+    const char* fig_id = get_attribute(table_node->attributes, "id");
+    char figure_label[64];
+
+    /* safe copy with bounds checking */
+    if (fig_id && fig_id[0] != '\0') {
+        size_t len = strlen(fig_id);
+        size_t copy_len = (len < sizeof(figure_label) - 1) ? 
+            len : sizeof(figure_label) - 1;
+
+        strncpy(figure_label, fig_id, copy_len);
+        figure_label[copy_len] = '\0';
     }
     else {
-        /* default caption */
+        snprintf(figure_label, sizeof(figure_label), 
+            "figure_%d", figure_counter);
+    }
+
+    /* build complete string in one buffer */
+    size_t max_len = 256;
+
+    if (caption_text) max_len += (strlen(caption_text) << 4);
+    ensure_capacity(converter, max_len);
+
+    if (converter->error_code) {
+        if (caption_text) free(caption_text);
+        return;
+    }
+
+    /* minimize append_string function calls */
+    append_string(converter, "\\caption{");
+
+    if (caption_text) {
+        escape_latex(converter, caption_text);
+        free(caption_text);
+    }
+    else {
         append_string(converter, "Figure ");
         char counter_str[32];
 
-        snprintf(counter_str, sizeof(counter_str), "%d", converter->state.figure_internal_counter);
+        snprintf(counter_str, sizeof(counter_str), "%d", figure_counter);
         append_string(converter, counter_str);
     }
 
-    append_string(converter, "}\n");
-
-    /* figure label */
-    const char* fig_id = get_attribute(table_node->attributes, "id");
-    char figure_label[32];
-
-    if (!fig_id || fig_id[0] == '\0')
-        snprintf(figure_label, sizeof(figure_label), "figure_%d", converter->state.figure_internal_counter);
-    else {
-        strncpy(figure_label, fig_id, sizeof(figure_label) - 1);
-        figure_label[sizeof(figure_label) - 1] = '\0';
-    }
-
-    append_string(converter, "\\label{fig:");
+    append_string(converter, "}\n\\label{fig:");
     escape_latex_special(converter, figure_label);
     append_string(converter, "}\n");
 }
